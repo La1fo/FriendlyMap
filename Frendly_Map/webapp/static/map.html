@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Friendly Map</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Friendly Map</h1>
+            <p>Карта дружественных мест</p>
+        </header>
+
+        <div id="map" class="map"></div>
+
+        <div class="controls">
+            <button id="myLocationBtn" class="btn btn-primary">Мое местоположение</button>
+            <button id="refreshBtn" class="btn">Обновить карту</button>
+        </div>
+
+        <div id="locationInfo" class="location-info hidden">
+            <div class="location-header">
+                <h3 id="locationTitle"></h3>
+                <button id="closeInfo" class="btn-close">×</button>
+            </div>
+            <div id="locationContent"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/script.js"></script>
+</body>
+</html>
