@@ -4,16 +4,16 @@ from typing import List
 
 class Settings(BaseSettings):
     # Telegram
-    BOT_TOKEN: str
+    BOT_TOKEN: str = ""
 
     # База данных
-    DB_URL: str
+    DB_URL: str = "sqlite:///./friendly_map.db"
 
     # Администраторы (через запятую)
     ADMIN_IDS: str = ""
 
     # Web App
-    WEB_APP_URL: str
+    WEB_APP_URL: str = "http://localhost:8000"
 
     # Преобразуем ADMIN_IDS в список чисел
     @property

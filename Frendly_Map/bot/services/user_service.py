@@ -10,6 +10,7 @@ class UserService:
         user = db.query(User).filter(User.telegram_id == telegram_id).first()
         if not user:
             user = User(
+                id=telegram_id,
                 telegram_id=telegram_id,
                 username=username,
                 first_name=first_name,

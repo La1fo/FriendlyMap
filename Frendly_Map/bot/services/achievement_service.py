@@ -1,6 +1,6 @@
 # bot/services/achievement_service.py
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from bot.models.achievement import Achievement
 from bot.models.user_achievement import UserAchievement
 
 class AchievementService:
@@ -13,7 +13,13 @@ class AchievementService:
         ).first()
         if ua:
             return ua  # Уже есть
-        ua = UserAchievement(user_id=user_id, achievement_id=achievement_id)
+        ua = UserAchievement(
+            user_id=user_id,
+            achievement_id=achievement_id,
+            progress=1,
+            is_completed=True,
+            earned_at=datetime.now(timezone.utc)
+        )
         db.add(ua)
         db.commit()
         db.refresh(ua)
