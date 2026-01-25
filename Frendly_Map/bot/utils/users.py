@@ -10,8 +10,10 @@ def get_or_create_user(db: Session, telegram_user) -> User:
     if not user:
         user = User(
             id=telegram_user.id,
+            telegram_id=telegram_user.id,
             username=telegram_user.username,
-            full_name=telegram_user.full_name
+            first_name=telegram_user.first_name,
+            last_name=telegram_user.last_name
         )
         db.add(user)
         db.commit()

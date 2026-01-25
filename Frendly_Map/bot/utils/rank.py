@@ -22,3 +22,7 @@ def get_user_rank_display(pts: int) -> str:
         return "🌍 ИССЛЕДОВАТЕЛЬ 2"
     else:
         return "🌍 ИССЛЕДОВАТЕЛЬ 1"
+
+
+def get_rank_title(pts: int) -> str:
+    return get_user_rank_display(pts)

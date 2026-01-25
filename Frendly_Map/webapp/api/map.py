@@ -20,7 +20,11 @@ async def get_approved_locations(db: Session = Depends(get_db_session)):
     for loc in locations:
         # Получаем теги
         tag_links = db.query(LocationTag).filter(LocationTag.location_id == loc.id).all()
-        tags = [db.query(Tag).get(link.tag_id).name for link in tag_links]
+        tags = []
+        for link in tag_links:
+            tag = db.get(Tag, link.tag_id)
+            if tag:
+                tags.append(tag.name)
 
         # Получаем фото
         photos = db.query(Photo).filter(Photo.location_id == loc.id).order_by(Photo.order_index).all()

@@ -20,6 +20,15 @@ services:
       - db
     ports:
       - "8000:8000"
+    command: uvicorn webapp.main:app --host 0.0.0.0 --port 8000
+
+  bot:
+    build: .
+    restart: always
+    env_file: .env
+    depends_on:
+      - db
+    command: python -m bot.main
 
 volumes:
   pgdata:
