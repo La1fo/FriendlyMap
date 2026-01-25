@@ -36,3 +36,4 @@ docker compose up --build
 - `DB_URL` — строка подключения к БД (по умолчанию `sqlite:///./friendly_map.db`)
 - `WEB_APP_URL` — URL веб-приложения (по умолчанию `http://localhost:8000`)
 - `ADMIN_IDS` — список ID администраторов через запятую
+- `SEED_SAMPLE_DATA` — добавлять тестовых пользователей для лидерборда (по умолчанию `false`)

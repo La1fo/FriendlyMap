@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # Web App
     WEB_APP_URL: str = "http://localhost:8000"
 
+    # Seed sample users for leaderboard (dev only)
+    SEED_SAMPLE_DATA: bool = False
+
     # Преобразуем ADMIN_IDS в список чисел
     @property
     def ADMIN_IDS_LIST(self) -> List[int]:
