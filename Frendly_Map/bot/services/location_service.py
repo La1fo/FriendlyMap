@@ -26,6 +26,7 @@ class LocationService:
         user = db.query(User).filter(User.id == user_id).first()
         if user:
             user.points += 5
+            user.moderation_locations += 1
 
         db.commit()
         db.refresh(loc)
@@ -34,7 +35,7 @@ class LocationService:
 
     @staticmethod
     def approve_location(db: Session, location_id: int, moderator_id: int, comment=None):
-        loc = db.query(Location).get(location_id)
+        loc = db.get(Location, location_id)
         if not loc:
             raise ValueError("Локация не найдена")
         loc.status = "approved"

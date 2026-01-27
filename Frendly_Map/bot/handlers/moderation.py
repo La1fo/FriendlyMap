@@ -1,21 +1,24 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
 
-from bot.database import get_db_session
+from bot.database import get_db_context
 from bot.models.location import Location
 from bot.models.user import User
-from bot.utils.common import is_admin
-from bot.services.location_service import LocationService
+from bot.utils.common import is_moderator
+from bot.services.achievements_manager import AchievementsManager
+from bot.services.moderation_service import ModerationService
 
 
 async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    if not is_admin(user.id):
-        await update.message.reply_text("⛔ Только для модераторов.")
-        return
-
-    with next(get_db_session()) as db:
-        locations = db.query(Location).filter(Location.status == "pending").all()
+    with get_db_context() as db:
+        if not is_moderator(db, user.id):
+            await update.message.reply_text("⛔ Только для модераторов.")
+            return
+        locations = db.query(Location).filter(
+            Location.status == "pending",
+            Location.is_deleted.is_(False),
+        ).all()
 
     if not locations:
         await update.message.reply_text("🎉 Нет локаций на модерацию")
@@ -44,45 +47,60 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     uid = update.effective_user.id
-    if not is_admin(uid):
-        await query.edit_message_text("⛔ Доступ запрещен.")
-        return
-
     action, loc_id = query.data.split("_")
     loc_id = int(loc_id)
 
-    with next(get_db_session()) as db:
-        service = LocationService(db)
-        loc = db.query(Location).filter(Location.id == loc_id).first()
+    with get_db_context() as db:
+        if not is_moderator(db, uid):
+            await query.edit_message_text("⛔ Доступ запрещен.")
+            return
+
+    achievements = AchievementsManager()
+    completed = []
+
+    with get_db_context() as db:
+        loc = db.query(Location).filter(Location.id == loc_id, Location.is_deleted.is_(False)).first()
 
         if not loc:
             await query.edit_message_text("⚠️ Локация не найдена")
             return
 
+        owner = db.query(User).filter(User.id == loc.user_id).first()
         # изменение статуса
         if action == "approve":
-            loc.status = "approved"
+            ModerationService.approve_location(db, uid, loc)
+            if owner:
+                owner.points += 15
+                owner.approved_locations += 1
+                owner.moderation_locations = max(owner.moderation_locations - 1, 0)
+                completed = achievements.apply_event(db, owner.id, "location_approved", 1)
             # +15 баллов
-            user.points += 15
         elif action == "reject":
-            loc.status = "rejected"
+            ModerationService.reject_location(db, uid, loc, "Без причины")
+            if owner:
+                owner.points = max(owner.points - 5, 0)
+                owner.rejected_locations += 1
+                owner.moderation_locations = max(owner.moderation_locations - 1, 0)
             # -5 баллов, но не меньше нуля
-            user.points = max(user.points - 5, 0)
 
         db.commit()
 
         # уведомление пользователя при approve/reject
-        user = db.query(User).filter(User.id == loc.user_id).first()
-        if user:
+        if owner:
             if action == "approve":
                 await context.bot.send_message(
-                    chat_id=user.id,
+                    chat_id=owner.id,
                     text=f"🎉 Твоя локация <b>{loc.name}</b> была <b>одобрена</b>!",
                     parse_mode="HTML"
                 )
+                if completed:
+                    await context.bot.send_message(
+                        chat_id=owner.id,
+                        text=achievements.format_completion_message(completed)
+                    )
             else:
                 await context.bot.send_message(
-                    chat_id=user.id,
+                    chat_id=owner.id,
                     text=f"😕 Локация <b>{loc.name}</b> была <b>отклонена</b>.",
                     parse_mode="HTML"
                 )

@@ -1,6 +1,7 @@
 # bot/utils/users.py
 from sqlalchemy.orm import Session
 from bot.models.user import User
+from bot.config import settings
 
 def get_or_create_user(db: Session, telegram_user) -> User:
     """
@@ -8,14 +9,21 @@ def get_or_create_user(db: Session, telegram_user) -> User:
     """
     user = db.query(User).filter(User.id == telegram_user.id).first()
     if not user:
+        role = "admin" if str(telegram_user.id) in settings.ADMIN_IDS.split(",") else "user"
         user = User(
             id=telegram_user.id,
+            telegram_id=telegram_user.id,
             username=telegram_user.username,
-            full_name=telegram_user.full_name
+            first_name=telegram_user.first_name,
+            last_name=telegram_user.last_name,
+            role=role,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
+    elif not user.role:
+        user.role = "admin" if str(telegram_user.id) in settings.ADMIN_IDS.split(",") else "user"
+        db.commit()
     return user
 
 def update_user_settings(db: Session, user_id: int, **kwargs):
