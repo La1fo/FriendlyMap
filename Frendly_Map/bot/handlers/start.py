@@ -16,7 +16,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     menu = [
         ["🗺 Карта", "➕ Добавить"],
         ["👤 Профиль", "🏆 Лидеры"],
-        ["🏆 Достижения"],
+        ["🏆 Достижения", "❓ FAQ"],
+        ["🆘 Техподдержка"],
     ]
     if is_mod:
         menu.append(["🛡 Модерация"])

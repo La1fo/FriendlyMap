@@ -14,12 +14,17 @@ from bot.models.photo import Photo
 from bot.models.user import User
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.moderation_service import ModerationService
+from bot.services.ticket_service import TicketService
 from bot.utils.common import is_moderator
 
 MENU, REJECT_REASON, DELETE_REASON, DELETE_CONFIRM, POINTS_USER, POINTS_ADJUST, POINTS_REASON = range(7)
 
 MENU_KEYBOARD = ReplyKeyboardMarkup(
-    [["🕒 На проверке"], ["🗑 Удаление локаций"], ["💎 Очки пользователей"], ["🔙 Назад"]],
+    [
+        ["🕒 На проверке", "🗑 Удаление локаций"],
+        ["💎 Очки пользователей", "❓ FAQ"],
+        ["🎫 Тикеты", "🔙 Назад"],
+    ],
     resize_keyboard=True,
 )
 
@@ -48,6 +53,11 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "💎 Очки пользователей":
         await update.message.reply_text("Введите username или ID пользователя:")
         return POINTS_USER
+    if text == "❓ FAQ":
+        from bot.handlers.faq import list_faq
+        return await list_faq(update, context)
+    if text == "🎫 Тикеты":
+        return await show_tickets(update, context)
     if text == "🔙 Назад":
         await update.message.reply_text("Возвращаюсь в главное меню.")
         return ConversationHandler.END
@@ -133,6 +143,29 @@ async def show_locations_for_delete(update: Update, context: ContextTypes.DEFAUL
             f"📅 {loc.created_at}"
         )
         await update.message.reply_text(message, reply_markup=kb, parse_mode="HTML")
+    return MENU
+
+
+async def show_tickets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    with get_db_context() as db:
+        if not _check_access(db, user_id):
+            await update.message.reply_text("⛔ Только для модераторов.")
+            return ConversationHandler.END
+        tickets = TicketService.list_open_tickets(db)
+
+    if not tickets:
+        await update.message.reply_text("Открытых тикетов нет.", reply_markup=MENU_KEYBOARD)
+        return MENU
+
+    for ticket in tickets[:10]:
+        kb = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Открыть", callback_data=f"ticket_open_{ticket.id}")]]
+        )
+        await update.message.reply_text(
+            f"🎫 Тикет #{ticket.id} от пользователя {ticket.user_id} (статус: {ticket.status})",
+            reply_markup=kb,
+        )
     return MENU
 
 
@@ -369,5 +402,6 @@ moderation_panel_handler = ConversationHandler(
         POINTS_REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, points_reason)],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
+    per_message=True,
     allow_reentry=True,
 )

@@ -2,6 +2,7 @@
 import logging
 from telegram import Bot
 from telegram.ext import Application
+from telegram.error import TelegramError
 from .config import settings
 from .database import init_db, get_db_context
 from .handlers import get_all_handlers
@@ -18,6 +19,8 @@ async def post_init(application: Application):
         ("add", "Добавить локацию"),
         ("leaderboard", "Топ пользователей"),
         ("achievements", "Достижения"),
+        ("faq", "FAQ"),
+        ("support", "Техподдержка"),
         ("moderation", "Панель модерации"),
         ("pending", "Модерация локаций"),
     ])
@@ -25,6 +28,15 @@ async def post_init(application: Application):
     with get_db_context() as db:
         AchievementsManager().ensure_definitions(db)
     logger.info("✅ Бот инициализирован")
+
+
+async def error_handler(update, context):
+    logger.exception("Unhandled error: %s", context.error)
+    if update and getattr(update, "effective_message", None):
+        try:
+            await update.effective_message.reply_text("⚠️ Произошла ошибка. Попробуйте позже.")
+        except TelegramError:
+            logger.exception("Failed to send error message to user.")
 
 def main():
     if not settings.BOT_TOKEN:
@@ -35,6 +47,7 @@ def main():
         .build()
     for handler in get_all_handlers():
         app.add_handler(handler)
+    app.add_error_handler(error_handler)
     logger.info("🚀 Запуск Friendly Map Bot...")
     app.run_polling(drop_pending_updates=True)
 

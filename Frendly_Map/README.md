@@ -16,6 +16,7 @@ pip install -r requirements.txt
 
 ```bash
 python init_db.py
+python migrate_db.py
 python -m webapp.main
 python -m bot.main
 ```
