@@ -9,7 +9,14 @@ connect_args = {}
 if settings.DB_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
-engine = create_engine(settings.DB_URL, echo=False, future=True, connect_args=connect_args)
+engine = create_engine(
+    settings.DB_URL,
+    echo=False,
+    future=True,
+    connect_args=connect_args,
+    pool_pre_ping=True,
+    pool_recycle=300,
+)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 def get_db_session():
