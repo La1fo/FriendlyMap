@@ -3,8 +3,9 @@ from telegram.ext import (
     MessageHandler, CommandHandler, ConversationHandler,
     ContextTypes, filters
 )
-from bot.database import get_db_session
+from bot.database import get_db_context
 from bot.services.location_service import LocationService
+from bot.services.achievements_manager import AchievementsManager
 from bot.utils.users import get_or_create_user
 
 ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_PHOTO, CONFIRM = range(5)
@@ -81,8 +82,9 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
     d = context.user_data
+    achievements = AchievementsManager()
 
-    with next(get_db_session()) as db:
+    with get_db_context() as db:
         get_or_create_user(db, user)
         loc = LocationService.create_location(
             db,
@@ -96,18 +98,27 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, file_id in enumerate(d.get("photos", [])):
             LocationService.add_photo(db, loc.id, file_id, order_index=i)
 
+        completed = achievements.apply_event(db, user.id, "location_submitted", 1)
+
     await update.message.reply_text(
         "🎉 Локация отправлена на модерацию!\n"
         "После одобрения ты получишь баллы 💎"
     )
+    if completed:
+        await update.message.reply_text(achievements.format_completion_message(completed))
+    context.user_data.clear()
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Отменено ❌")
+    context.user_data.clear()
     return ConversationHandler.END
 
 add_location_handler = ConversationHandler(
-    entry_points=[MessageHandler(filters.Regex("^(➕ Добавить|add)$"), start_add)],
+    entry_points=[
+        CommandHandler("add", start_add),
+        MessageHandler(filters.Regex("^(➕ Добавить|add)$"), start_add),
+    ],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_description)],
         ASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords)],

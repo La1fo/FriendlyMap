@@ -1,5 +1,6 @@
 # bot/models/photo.py
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime
+from sqlalchemy.sql import func
 from .base import Base
 
 class Photo(Base):
@@ -7,4 +8,6 @@ class Photo(Base):
     id = Column(Integer, primary_key=True)
     location_id = Column(Integer, ForeignKey("locations.id"))
     file_id = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
     order_index = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

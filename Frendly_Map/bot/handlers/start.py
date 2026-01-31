@@ -1,22 +1,29 @@
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import CommandHandler, ContextTypes
 
-from bot.database import get_db_session
+from bot.database import get_db_context
+from bot.utils.common import is_moderator
 from bot.utils.users import get_or_create_user
 
-MAIN_MENU = [
-    ["🗺 Карта", "➕ Добавить"],
-    ["👤 Профиль", "🏆 Рейтинг"]
-]
+def build_main_menu(user) -> ReplyKeyboardMarkup:
+    with get_db_context() as db:
+        get_or_create_user(db, user)
+        is_mod = is_moderator(db, user.id)
+
+    menu = [
+        ["🗺 Карта", "➕ Добавить"],
+        ["👤 Профиль", "🏆 Лидеры"],
+        ["🏆 Достижения"],
+        ["❓ FAQ", "🆘 Техподдержка"],
+    ]
+    if is_mod:
+        menu.append(["🛡 Модерация"])
+    return ReplyKeyboardMarkup(menu, resize_keyboard=True)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
-    # Создаем/находим пользователя
-    with next(get_db_session()) as db:
-        get_or_create_user(db, user)
-
-    keyboard = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
+    keyboard = build_main_menu(user)
 
     await update.message.reply_text(
         f"Привет, {user.first_name}! 👋\n"
