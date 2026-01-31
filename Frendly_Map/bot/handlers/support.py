@@ -80,8 +80,11 @@ async def close_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(
-        "Главное меню:", reply_markup=build_main_menu(update.effective_user)
+    await query.edit_message_text("Главное меню:")
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Выберите действие:",
+        reply_markup=build_main_menu(update.effective_user),
     )
     return ConversationHandler.END
 

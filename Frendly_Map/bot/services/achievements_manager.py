@@ -122,7 +122,7 @@ class AchievementsManager:
         db.refresh(season)
         return season
 
-    def apply_event(self, db: Session, user_id: int, event: str, amount: int = 1) -> List[Achievement]:
+    def apply_event(self, db: Session, user_id: int, event: str, amount: int = 1) -> List[dict]:
         self.ensure_definitions(db)
         user = db.get(User, user_id)
         if not user:
@@ -133,7 +133,7 @@ class AchievementsManager:
         if not definitions:
             return []
 
-        completed: List[Achievement] = []
+        completed: List[dict] = []
 
         for definition in definitions:
             achievement = db.query(Achievement).filter(Achievement.code == definition.code).first()
@@ -155,7 +155,15 @@ class AchievementsManager:
                 progress_entry.earned_at = datetime.now(timezone.utc)
                 self._apply_reward(user, achievement)
                 user.achievements_count += 1
-                completed.append(achievement)
+                completed.append(
+                    {
+                        "name": achievement.name,
+                        "icon": achievement.icon,
+                        "points_reward": achievement.points_reward,
+                        "pts_reward": achievement.pts_reward,
+                        "type": achievement.type,
+                    }
+                )
 
         db.commit()
         return completed
@@ -210,13 +218,13 @@ class AchievementsManager:
         if achievement.type == "ranked":
             user.pts += achievement.pts_reward
 
-    def format_completion_message(self, achievements: Iterable[Achievement]) -> str:
+    def format_completion_message(self, achievements: Iterable[dict]) -> str:
         lines = [
             "🏆 Новые достижения!",
         ]
         for achievement in achievements:
-            reward = [f"+{achievement.points_reward}⭐"]
-            if achievement.type == "ranked" and achievement.pts_reward:
-                reward.append(f"+{achievement.pts_reward}🎖️")
-            lines.append(f"{achievement.icon} {achievement.name} ({' / '.join(reward)})")
+            reward = [f"+{achievement['points_reward']}⭐"]
+            if achievement["type"] == "ranked" and achievement["pts_reward"]:
+                reward.append(f"+{achievement['pts_reward']}🎖️")
+            lines.append(f"{achievement['icon']} {achievement['name']} ({' / '.join(reward)})")
         return "\n".join(lines)
