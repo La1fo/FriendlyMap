@@ -2,7 +2,7 @@
 
 from sqlalchemy import inspect, text
 
-from bot.database import engine, init_db
+from bot.database import engine, init_db, _ensure_location_columns, _ensure_role_column
 
 
 def add_role_column() -> None:
@@ -17,6 +17,8 @@ def add_role_column() -> None:
 def main() -> None:
     init_db()
     add_role_column()
+    _ensure_role_column()
+    _ensure_location_columns()
     print("✅ Migrations applied.")
 
 

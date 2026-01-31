@@ -42,6 +42,7 @@ def init_db():
     from bot.models.ticket_message import TicketMessage  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _ensure_role_column()
+    _ensure_location_columns()
 
 
 def _ensure_role_column():
@@ -53,3 +54,24 @@ def _ensure_role_column():
         return
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user'"))
+
+
+def _ensure_location_columns():
+    inspector = inspect(engine)
+    if "locations" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("locations")}
+    statements = []
+    if "is_deleted" not in columns:
+        statements.append("ALTER TABLE locations ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE")
+    if "deleted_at" not in columns:
+        statements.append("ALTER TABLE locations ADD COLUMN deleted_at TIMESTAMP")
+    if "deleted_by" not in columns:
+        statements.append("ALTER TABLE locations ADD COLUMN deleted_by INTEGER")
+    if "deleted_reason" not in columns:
+        statements.append("ALTER TABLE locations ADD COLUMN deleted_reason TEXT")
+    if not statements:
+        return
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
