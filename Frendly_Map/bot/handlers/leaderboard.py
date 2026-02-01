@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 
 from bot.database import get_db_context
@@ -20,7 +20,16 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_user = db.get(User, update.effective_user.id)
 
     if not users:
-        await chat.reply_text("Рейтинг пока пуст 🤷")
+        back_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]
+        ])
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                "Рейтинг пока пуст 🤷",
+                reply_markup=back_kb
+            )
+        else:
+            await chat.reply_text("Рейтинг пока пуст 🤷", reply_markup=back_kb)
         return
 
     lines = ["🏆 Таблица лидеров (pts):"]
@@ -39,7 +48,14 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🏷️ Твой ранг: {LeaderboardService.get_rank_title(current_user.pts)}",
         ])
 
-    await chat.reply_text("\n".join(lines))
+    back_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]
+    ])
+    message = "\n".join(lines)
+    if update.callback_query:
+        await update.callback_query.edit_message_text(message, reply_markup=back_kb)
+    else:
+        await chat.reply_text(message, reply_markup=back_kb)
 
 
 leaderboard_handler = CommandHandler("leaderboard", leaderboard)

@@ -19,11 +19,19 @@ from .moderation_menu import (
     delete_location_handler,
     tickets_handler,
     moderation_close_ticket_handler,
+    moderation_ticket_back_handler,
+    moderation_ticket_close_handler,
 )
 from .map import map_command_handler, map_menu_handler, map_callback_handler
 from .leaderboard import leaderboard_handler, leaderboard_menu_handler, leaderboard_callback_handler
 from .achievements import achievements_handler, achievements_menu_handler, achievements_callback_handler
-from .faq import faq_handler, faq_add_handler, faq_callback_handler
+from .faq import (
+    faq_handler,
+    faq_add_handler,
+    faq_callback_handler,
+    faq_delete_handler,
+    faq_delete_confirm_handler,
+)
 from .support import (
     support_handler,
     support_callback_handler,
@@ -63,9 +71,13 @@ def get_all_handlers():
         delete_location_handler,
         tickets_handler,
         moderation_close_ticket_handler,
+        moderation_ticket_back_handler,
+        moderation_ticket_close_handler,
         faq_handler,
         faq_add_handler,
         faq_callback_handler,
+        faq_delete_handler,
+        faq_delete_confirm_handler,
         support_handler,
         support_callback_handler,
         support_chat_handler,

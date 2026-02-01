@@ -1,5 +1,5 @@
 import json
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 
 from bot.database import get_db_context
@@ -53,7 +53,18 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             lines.append("")
 
-    await chat.reply_text("\n".join(lines).strip(), parse_mode="HTML")
+    back_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]
+    ])
+    message = "\n".join(lines).strip()
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            message,
+            parse_mode="HTML",
+            reply_markup=back_kb
+        )
+    else:
+        await chat.reply_text(message, parse_mode="HTML", reply_markup=back_kb)
 
 
 def _get_target(achievement: Achievement) -> int:

@@ -83,13 +83,6 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             archive_lines.append(f"• #{ticket.id} закрыт {closed_at}")
         msg += "\n".join(archive_lines)
 
-    keyboard = None
-    if active_ticket:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💬 Перейти в чат", callback_data=f"support_chat_{active_ticket.id}")],
-            [InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"support_close_{active_ticket.id}")]
-        ])
-
     if query:
         await query.edit_message_text(msg, reply_markup=_profile_keyboard())
     else:
@@ -179,6 +172,7 @@ async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     context.user_data["support_ticket_id"] = ticket_id
     context.user_data["support_chat_active"] = ticket.status == "open"
+    context.user_data["profile_ticket_view"] = True
     context.user_data["profile_menu_message_id"] = query.message.message_id
 
     history_text = _format_ticket_history(messages)
@@ -191,8 +185,11 @@ async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("profile_ticket_view"):
+        return
     status = context.user_data.get("profile_ticket_status", "open")
     context.user_data.pop("support_chat_active", None)
+    context.user_data.pop("profile_ticket_view", None)
 
     with get_db_context() as db:
         tickets = (
@@ -204,7 +201,16 @@ async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not tickets:
         text = "Нет активных тикетов." if status == "open" else "Архив пуст."
-        await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
+        menu_message_id = context.user_data.get("profile_menu_message_id")
+        if menu_message_id:
+            await context.bot.edit_message_text(
+                text,
+                chat_id=update.effective_user.id,
+                message_id=menu_message_id,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("◀️ Назад", callback_data="profile_tickets")]
+                ])
+            )
         return
 
     keyboard = [
@@ -212,7 +218,6 @@ async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE
         for ticket in tickets
     ]
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="profile_tickets")])
-    await update.message.reply_text("Выберите тикет:", reply_markup=ReplyKeyboardRemove())
     menu_message_id = context.user_data.get("profile_menu_message_id")
     if menu_message_id:
         await context.bot.edit_message_text(
@@ -227,9 +232,12 @@ async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         context.user_data["profile_menu_message_id"] = sent.message_id
+    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
 
 
 async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("profile_ticket_view"):
+        return
     ticket_id = context.user_data.get("support_ticket_id")
     if not ticket_id:
         await update.message.reply_text("⚠️ Тикет не выбран.", reply_markup=ReplyKeyboardRemove())
@@ -250,7 +258,11 @@ async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYP
 
     context.user_data["support_chat_active"] = False
     context.user_data.pop("support_ticket_id", None)
+    context.user_data.pop("profile_ticket_view", None)
     await update.message.reply_text("✅ Тикет закрыт.", reply_markup=ReplyKeyboardRemove())
+    status = "closed"
+    context.user_data["profile_ticket_status"] = status
+    await profile_ticket_back(update, context)
 
 
 profile_handler = CommandHandler("profile", profile)

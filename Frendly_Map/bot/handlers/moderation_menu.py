@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import or_
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -14,6 +14,7 @@ from telegram.ext import (
 from bot.database import get_db_context
 from bot.handlers.moderation import send_pending_locations
 from bot.models.location import Location
+from bot.models.photo import Photo
 from bot.models.support_ticket import SupportMessage, SupportTicket
 from bot.models.user import User
 from bot.utils.common import is_admin
@@ -48,6 +49,51 @@ def _format_ticket_history(messages: list[SupportMessage]) -> str:
     return "\n\n".join(lines)
 
 
+def _ticket_actions_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [["◀️ Назад", "✅ Закрыть тикет"]],
+        resize_keyboard=True
+    )
+
+
+async def _render_tickets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    menu_message_id = context.user_data.get("moderation_menu_message_id")
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🟢 Активные", callback_data="tickets_active"),
+            InlineKeyboardButton("📦 Архив", callback_data="tickets_archive"),
+        ],
+        [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
+    ])
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "Выберите раздел тикетов:",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=keyboard
+        )
+    else:
+        sent = await update.message.reply_text("Выберите раздел тикетов:", reply_markup=keyboard)
+        context.user_data["moderation_menu_message_id"] = sent.message_id
+
+
+async def _show_moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    menu_message_id = context.user_data.get("moderation_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "⚙️ Панель модерации:",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=_moderation_keyboard()
+        )
+    else:
+        sent = await (update.message or update.callback_query.message).reply_text(
+            "⚙️ Панель модерации:",
+            reply_markup=_moderation_keyboard()
+        )
+        context.user_data["moderation_menu_message_id"] = sent.message_id
+
+
 async def moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await update.callback_query.answer()
@@ -60,12 +106,8 @@ async def moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(
-            "⚙️ Панель модерации:",
-            reply_markup=_moderation_keyboard()
-        )
-    else:
-        await chat.reply_text("⚙️ Панель модерации:", reply_markup=_moderation_keyboard())
+        context.user_data["moderation_menu_message_id"] = update.callback_query.message.message_id
+    await _show_moderation_menu(update, context)
 
 
 async def moderation_locations(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,13 +127,15 @@ async def points_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     context.user_data.pop("points_data", None)
-    await query.message.reply_text(
+    context.user_data["moderation_menu_message_id"] = query.message.message_id
+    await query.edit_message_text(
         "Выберите действие:",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("➕ Добавить", callback_data="points_add"),
                 InlineKeyboardButton("➖ Списать", callback_data="points_sub"),
-            ]
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
         ])
     )
     return POINTS_ACTION
@@ -102,7 +146,7 @@ async def points_choose_action(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     action = "add" if query.data == "points_add" else "sub"
     context.user_data["points_data"] = {"action": action}
-    await query.message.reply_text("Введите @username или ID пользователя для поиска:")
+    await query.edit_message_text("Введите @username или ID пользователя для поиска:")
     return POINTS_SEARCH
 
 
@@ -130,10 +174,20 @@ async def points_search_user(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )]
         for user in users
     ]
-    await update.message.reply_text(
-        "Выберите пользователя:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_points")])
+    menu_message_id = context.user_data.get("moderation_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "Выберите пользователя:",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        await update.message.reply_text(
+            "Выберите пользователя:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     return POINTS_SELECT_USER
 
 
@@ -142,13 +196,14 @@ async def points_select_user(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     user_id = int(query.data.split("_")[-1])
     context.user_data.setdefault("points_data", {})["user_id"] = user_id
-    await query.message.reply_text(
+    await query.edit_message_text(
         "Какие баллы изменяем?",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("⭐ Обычные", callback_data="points_type_regular"),
                 InlineKeyboardButton("🎯 Ранговые", callback_data="points_type_rank"),
-            ]
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="mod_points")],
         ])
     )
     return POINTS_TYPE
@@ -159,7 +214,7 @@ async def points_choose_type(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     points_type = "regular" if query.data == "points_type_regular" else "rank"
     context.user_data.setdefault("points_data", {})["type"] = points_type
-    await query.message.reply_text("Введите число баллов:")
+    await query.edit_message_text("Введите число баллов:")
     return POINTS_AMOUNT
 
 
@@ -193,9 +248,11 @@ async def points_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
 
     await update.message.reply_text(
-        f"✅ Готово. Новый баланс {label} баллов: {new_value}"
+        f"✅ Готово. Новый баланс {label} баллов: {new_value}",
+        reply_markup=ReplyKeyboardRemove()
     )
     context.user_data.pop("points_data", None)
+    await _show_moderation_menu(update, context)
     return ConversationHandler.END
 
 
@@ -206,7 +263,8 @@ async def delete_location_start(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text("⛔ Только для модераторов.")
         return ConversationHandler.END
 
-    await query.message.reply_text("Введите название или ID локации для поиска:")
+    context.user_data["moderation_menu_message_id"] = query.message.message_id
+    await query.edit_message_text("Введите название или ID локации для поиска:")
     return DEL_SEARCH
 
 
@@ -232,7 +290,17 @@ async def delete_location_search(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"del_loc_{loc.id}")]
         for loc in locations
     ]
-    await update.message.reply_text("Выберите локацию:", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="moderation")])
+    menu_message_id = context.user_data.get("moderation_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "Выберите локацию:",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        await update.message.reply_text("Выберите локацию:", reply_markup=InlineKeyboardMarkup(keyboard))
     return DEL_SELECT
 
 
@@ -241,7 +309,28 @@ async def delete_location_select(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     loc_id = int(query.data.split("_")[-1])
     context.user_data["delete_loc_id"] = loc_id
-    await query.message.reply_text("Укажите причину удаления:")
+    with get_db_context() as db:
+        loc = db.query(Location).filter(Location.id == loc_id).first()
+        photos = (
+            db.query(Photo)
+            .filter(Photo.location_id == loc_id)
+            .order_by(Photo.order_index.asc())
+            .all()
+        ) if loc else []
+
+    if not loc:
+        await query.edit_message_text("⚠️ Локация не найдена.")
+        return ConversationHandler.END
+
+    info = (
+        f"📍 {loc.name}\n"
+        f"📝 {loc.description or 'Без описания'}\n"
+        f"🌍 {loc.latitude}, {loc.longitude}\n"
+        f"🗺️ Статус: {loc.status}"
+    )
+    await query.edit_message_text(info + "\n\nУкажите причину удаления:")
+    for photo in photos[:3]:
+        await context.bot.send_photo(chat_id=query.message.chat_id, photo=photo.file_id)
     return DEL_REASON
 
 
@@ -265,6 +354,7 @@ async def delete_location_reason(update: Update, context: ContextTypes.DEFAULT_T
 
     context.user_data.pop("delete_loc_id", None)
     await update.message.reply_text("✅ Локация удалена и отмечена причиной.")
+    await _show_moderation_menu(update, context)
     return ConversationHandler.END
 
 
@@ -275,6 +365,7 @@ async def tickets_menu_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.message.reply_text("⛔ Только для модераторов.")
         return ConversationHandler.END
 
+    context.user_data["moderation_menu_message_id"] = query.message.message_id
     await query.edit_message_text(
         "Выберите раздел тикетов:",
         reply_markup=InlineKeyboardMarkup([
@@ -293,7 +384,7 @@ async def tickets_choose_section(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     status = "open" if query.data == "tickets_active" else "closed"
     context.user_data["tickets_status"] = status
-    await query.message.reply_text("Введите строку поиска (ID или username), или '-' чтобы показать все:")
+    await query.edit_message_text("Введите строку поиска (ID или username), или '-' чтобы показать все:")
     return TICKETS_SEARCH
 
 
@@ -321,7 +412,17 @@ async def tickets_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )]
         for ticket, user in results
     ]
-    await update.message.reply_text("Выберите тикет:", reply_markup=InlineKeyboardMarkup(keyboard))
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_tickets")])
+    menu_message_id = context.user_data.get("moderation_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "Выберите тикет:",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        await update.message.reply_text("Выберите тикет:", reply_markup=InlineKeyboardMarkup(keyboard))
     return TICKETS_SELECT
 
 
@@ -330,6 +431,7 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     ticket_id = int(query.data.split("_")[-1])
     context.user_data["moderation_ticket_id"] = ticket_id
+    context.user_data["moderation_ticket_view"] = True
 
     with get_db_context() as db:
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
@@ -350,9 +452,12 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"💬 Тикет #{ticket_id} · {user_label}\n\n{history_text}",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"ticket_close_{ticket_id}")],
             [InlineKeyboardButton("🔙 Назад к тикетам", callback_data="mod_tickets")]
         ])
+    )
+    await query.message.reply_text(
+        "Выберите действие:",
+        reply_markup=_ticket_actions_keyboard()
     )
     return ConversationHandler.END
 
@@ -384,6 +489,42 @@ async def close_ticket_by_moderator(update: Update, context: ContextTypes.DEFAUL
         chat_id=user_id,
         text=f"✅ Ваш тикет #{ticket_id} закрыт модератором и перемещен в архив.",
     )
+
+
+async def moderation_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("moderation_ticket_view"):
+        return
+    context.user_data.pop("moderation_ticket_view", None)
+    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await _render_tickets_menu(update, context)
+
+
+async def moderation_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("moderation_ticket_view"):
+        return
+    ticket_id = context.user_data.get("moderation_ticket_id")
+    if not ticket_id:
+        await update.message.reply_text("⚠️ Тикет не выбран.", reply_markup=ReplyKeyboardRemove())
+        return
+    with get_db_context() as db:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        if not ticket or ticket.status != "open":
+            await update.message.reply_text("⚠️ Тикет уже закрыт или не найден.", reply_markup=ReplyKeyboardRemove())
+            return
+        ticket.status = "closed"
+        ticket.closed_at = datetime.utcnow()
+        ticket.closed_by = update.effective_user.id
+        user_id = ticket.user_id
+        db.commit()
+
+    context.user_data.pop("moderation_ticket_view", None)
+    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("✅ Тикет закрыт и перемещен в архив.")
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"✅ Ваш тикет #{ticket_id} закрыт модератором и перемещен в архив.",
+    )
+    await _render_tickets_menu(update, context)
 
 
 moderation_menu_handler = CommandHandler("moderation", moderation_menu)
@@ -425,4 +566,6 @@ tickets_handler = ConversationHandler(
     allow_reentry=True,
 )
 
-moderation_close_ticket_handler = CallbackQueryHandler(close_ticket_by_moderator, pattern="^ticket_close_\d+$")
+moderation_close_ticket_handler = CallbackQueryHandler(close_ticket_by_moderator, pattern="^ticket_close_\\d+$")
+moderation_ticket_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), moderation_ticket_back)
+moderation_ticket_close_handler = MessageHandler(filters.Regex("^✅ Закрыть тикет$"), moderation_ticket_close)
