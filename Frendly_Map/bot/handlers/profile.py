@@ -1,18 +1,45 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
+from datetime import datetime
+
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
+from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from bot.database import get_db_context
-from bot.models.support_ticket import SupportTicket
+from bot.models.support_ticket import SupportMessage, SupportTicket
 from bot.models.user import User
 from bot.utils.rank import get_user_rank_display
 
 
+def _profile_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎫 Тикеты", callback_data="profile_tickets")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")],
+    ])
+
+
+def _ticket_actions_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [["◀️ Назад", "✅ Закрыть тикет"]],
+        resize_keyboard=True
+    )
+
+
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        chat = update.callback_query.message
-    else:
-        chat = update.message
+    query = update.callback_query
+    if query:
+        await query.answer()
+        context.user_data["profile_menu_message_id"] = query.message.message_id
 
     uid = update.effective_user.id
     with get_db_context() as db:
@@ -31,7 +58,10 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     if not user:
-        await chat.reply_text("Ошибка: профиль не найден 😢")
+        if query:
+            await query.edit_message_text("Ошибка: профиль не найден 😢")
+        else:
+            await update.message.reply_text("Ошибка: профиль не найден 😢")
         return
 
     msg = (
@@ -60,9 +90,177 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"support_close_{active_ticket.id}")]
         ])
 
-    await chat.reply_text(msg, reply_markup=keyboard)
+    if query:
+        await query.edit_message_text(msg, reply_markup=_profile_keyboard())
+    else:
+        sent = await update.message.reply_text(msg, reply_markup=_profile_keyboard())
+        context.user_data["profile_menu_message_id"] = sent.message_id
+
+
+async def profile_tickets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["profile_menu_message_id"] = query.message.message_id
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🟢 Активные", callback_data="profile_tickets_active"),
+            InlineKeyboardButton("📦 Архив", callback_data="profile_tickets_archive"),
+        ],
+        [InlineKeyboardButton("◀️ Назад", callback_data="profile")],
+    ])
+    context.user_data.pop("profile_ticket_status", None)
+    await query.edit_message_text("🎫 Тикеты", reply_markup=keyboard)
+
+
+def _format_ticket_history(messages: list[SupportMessage]) -> str:
+    if not messages:
+        return "Сообщений пока нет."
+    lines = []
+    for msg in messages:
+        who = "👤" if msg.sender_role == "user" else "👮"
+        timestamp = msg.created_at.strftime("%d.%m %H:%M") if msg.created_at else ""
+        lines.append(f"{who} {timestamp}\n{msg.message}")
+    return "\n\n".join(lines)
+
+
+async def profile_tickets_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["profile_menu_message_id"] = query.message.message_id
+    status = "open" if query.data.endswith("active") else "closed"
+    context.user_data["profile_ticket_status"] = status
+
+    with get_db_context() as db:
+        tickets = (
+            db.query(SupportTicket)
+            .filter(SupportTicket.user_id == update.effective_user.id, SupportTicket.status == status)
+            .order_by(SupportTicket.created_at.desc())
+            .all()
+        )
+
+    if not tickets:
+        empty_text = "Нет активных тикетов." if status == "open" else "Архив пуст."
+        await query.edit_message_text(
+            empty_text,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("◀️ Назад", callback_data="profile_tickets")]
+            ])
+        )
+        return
+
+    keyboard = [
+        [InlineKeyboardButton(f"#{ticket.id}", callback_data=f"profile_ticket_{ticket.id}")]
+        for ticket in tickets
+    ]
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="profile_tickets")])
+    await query.edit_message_text(
+        "Выберите тикет:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    ticket_id = int(query.data.split("_")[-1])
+
+    with get_db_context() as db:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        if not ticket or ticket.user_id != update.effective_user.id:
+            await query.edit_message_text("⚠️ Тикет не найден.")
+            return
+        messages = (
+            db.query(SupportMessage)
+            .filter(SupportMessage.ticket_id == ticket_id)
+            .order_by(SupportMessage.created_at.asc())
+            .all()
+        )
+
+    context.user_data["support_ticket_id"] = ticket_id
+    context.user_data["support_chat_active"] = ticket.status == "open"
+    context.user_data["profile_menu_message_id"] = query.message.message_id
+
+    history_text = _format_ticket_history(messages)
+    title = f"💬 Тикет #{ticket_id}\nСтатус: {'открыт' if ticket.status == 'open' else 'закрыт'}\n\n"
+    await query.edit_message_text(title + history_text)
+    await query.message.reply_text(
+        "Выберите действие:",
+        reply_markup=_ticket_actions_keyboard()
+    )
+
+
+async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    status = context.user_data.get("profile_ticket_status", "open")
+    context.user_data.pop("support_chat_active", None)
+
+    with get_db_context() as db:
+        tickets = (
+            db.query(SupportTicket)
+            .filter(SupportTicket.user_id == update.effective_user.id, SupportTicket.status == status)
+            .order_by(SupportTicket.created_at.desc())
+            .all()
+        )
+
+    if not tickets:
+        text = "Нет активных тикетов." if status == "open" else "Архив пуст."
+        await update.message.reply_text(text, reply_markup=ReplyKeyboardRemove())
+        return
+
+    keyboard = [
+        [InlineKeyboardButton(f"#{ticket.id}", callback_data=f"profile_ticket_{ticket.id}")]
+        for ticket in tickets
+    ]
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="profile_tickets")])
+    await update.message.reply_text("Выберите тикет:", reply_markup=ReplyKeyboardRemove())
+    menu_message_id = context.user_data.get("profile_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "Выберите тикет:",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        sent = await update.message.reply_text(
+            "Выберите тикет:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        context.user_data["profile_menu_message_id"] = sent.message_id
+
+
+async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ticket_id = context.user_data.get("support_ticket_id")
+    if not ticket_id:
+        await update.message.reply_text("⚠️ Тикет не выбран.", reply_markup=ReplyKeyboardRemove())
+        return
+
+    with get_db_context() as db:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        if not ticket or ticket.user_id != update.effective_user.id:
+            await update.message.reply_text("⚠️ Тикет не найден.", reply_markup=ReplyKeyboardRemove())
+            return
+        if ticket.status != "open":
+            await update.message.reply_text("Тикет уже закрыт.", reply_markup=ReplyKeyboardRemove())
+            return
+        ticket.status = "closed"
+        ticket.closed_at = datetime.utcnow()
+        ticket.closed_by = update.effective_user.id
+        db.commit()
+
+    context.user_data["support_chat_active"] = False
+    context.user_data.pop("support_ticket_id", None)
+    await update.message.reply_text("✅ Тикет закрыт.", reply_markup=ReplyKeyboardRemove())
 
 
 profile_handler = CommandHandler("profile", profile)
 profile_menu_handler = MessageHandler(filters.Regex("^(👤 Профиль|profile)$"), profile)
 profile_callback_handler = CallbackQueryHandler(profile, pattern="^profile$")
+profile_tickets_menu_handler = CallbackQueryHandler(profile_tickets_menu, pattern="^profile_tickets$")
+profile_tickets_list_handler = CallbackQueryHandler(
+    profile_tickets_list,
+    pattern="^profile_tickets_(active|archive)$"
+)
+profile_ticket_chat_handler = CallbackQueryHandler(profile_ticket_chat, pattern="^profile_ticket_\\d+$")
+profile_ticket_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), profile_ticket_back)
+profile_ticket_close_handler = MessageHandler(filters.Regex("^✅ Закрыть тикет$"), profile_ticket_close)

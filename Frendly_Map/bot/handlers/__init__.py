@@ -1,5 +1,14 @@
 from .start import start_handler
-from .profile import profile_handler, profile_menu_handler, profile_callback_handler
+from .profile import (
+    profile_handler,
+    profile_menu_handler,
+    profile_callback_handler,
+    profile_tickets_menu_handler,
+    profile_tickets_list_handler,
+    profile_ticket_chat_handler,
+    profile_ticket_back_handler,
+    profile_ticket_close_handler,
+)
 from .add_location import add_location_handler
 from .moderation import pending_handler, moderation_callback_handler
 from .moderation_menu import (
@@ -23,12 +32,18 @@ from .support import (
     support_message_router,
     moderator_message_router,
 )
+from .menu import main_menu_callback_handler
 def get_all_handlers():
     return [
         start_handler,
         profile_handler,
         profile_menu_handler,
         profile_callback_handler,
+        profile_tickets_menu_handler,
+        profile_tickets_list_handler,
+        profile_ticket_chat_handler,
+        profile_ticket_back_handler,
+        profile_ticket_close_handler,
         add_location_handler,
         map_command_handler,
         map_menu_handler,
@@ -57,4 +72,5 @@ def get_all_handlers():
         support_close_handler,
         support_message_router,
         moderator_message_router,
+        main_menu_callback_handler,
     ]

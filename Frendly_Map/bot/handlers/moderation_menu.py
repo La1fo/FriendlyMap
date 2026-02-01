@@ -14,7 +14,7 @@ from telegram.ext import (
 from bot.database import get_db_context
 from bot.handlers.moderation import send_pending_locations
 from bot.models.location import Location
-from bot.models.support_ticket import SupportTicket
+from bot.models.support_ticket import SupportMessage, SupportTicket
 from bot.models.user import User
 from bot.utils.common import is_admin
 
@@ -33,7 +33,19 @@ def _moderation_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⚖️ Баллы и ранги", callback_data="mod_points")],
         [InlineKeyboardButton("🗑 Удаление локаций", callback_data="mod_delete_location")],
         [InlineKeyboardButton("🎫 Тикеты", callback_data="mod_tickets")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")],
     ])
+
+
+def _format_ticket_history(messages: list[SupportMessage]) -> str:
+    if not messages:
+        return "Сообщений пока нет."
+    lines = []
+    for msg in messages:
+        who = "👤" if msg.sender_role == "user" else "👮"
+        timestamp = msg.created_at.strftime("%d.%m %H:%M") if msg.created_at else ""
+        lines.append(f"{who} {timestamp}\n{msg.message}")
+    return "\n\n".join(lines)
 
 
 async def moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -47,7 +59,13 @@ async def moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await chat.reply_text("⛔ Только для модераторов.")
         return
 
-    await chat.reply_text("⚙️ Панель модерации:", reply_markup=_moderation_keyboard())
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            "⚙️ Панель модерации:",
+            reply_markup=_moderation_keyboard()
+        )
+    else:
+        await chat.reply_text("⚙️ Панель модерации:", reply_markup=_moderation_keyboard())
 
 
 async def moderation_locations(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -257,13 +275,14 @@ async def tickets_menu_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.message.reply_text("⛔ Только для модераторов.")
         return ConversationHandler.END
 
-    await query.message.reply_text(
+    await query.edit_message_text(
         "Выберите раздел тикетов:",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🟢 Активные", callback_data="tickets_active"),
                 InlineKeyboardButton("📦 Архив", callback_data="tickets_archive"),
-            ]
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
         ])
     )
     return TICKETS_MENU
@@ -315,15 +334,21 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with get_db_context() as db:
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
         user = db.query(User).filter(User.id == ticket.user_id).first() if ticket else None
+        messages = (
+            db.query(SupportMessage)
+            .filter(SupportMessage.ticket_id == ticket_id)
+            .order_by(SupportMessage.created_at.asc())
+            .all()
+        ) if ticket else []
 
     if not ticket:
         await query.message.reply_text("⚠️ Тикет не найден.")
         return ConversationHandler.END
 
     user_label = user.username or user.first_name or ticket.user_id
-    await query.message.reply_text(
-        f"💬 Чат тикета #{ticket_id} с пользователем {user_label}.\n"
-        "Напишите сообщение для ответа.",
+    history_text = _format_ticket_history(messages)
+    await query.edit_message_text(
+        f"💬 Тикет #{ticket_id} · {user_label}\n\n{history_text}",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"ticket_close_{ticket_id}")],
             [InlineKeyboardButton("🔙 Назад к тикетам", callback_data="mod_tickets")]
