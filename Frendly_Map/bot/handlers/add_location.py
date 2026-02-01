@@ -190,5 +190,6 @@ add_location_handler = ConversationHandler(
         CommandHandler("cancel", cancel),
         MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
     ],
-    allow_reentry=True
+    allow_reentry=True,
+    per_message=True,
 )

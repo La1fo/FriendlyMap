@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 
 from bot.database import get_db_context
-from bot.handlers.moderation import send_pending_locations
+from bot.services.moderation_service import send_pending_locations
 from bot.models.location import Location
 from bot.models.photo import Photo
 from bot.models.support_ticket import SupportMessage, SupportTicket
@@ -646,7 +646,7 @@ tickets_handler = ConversationHandler(
     states={
         TICKETS_MENU: [CallbackQueryHandler(tickets_choose_section, pattern="^tickets_(active|archive)$")],
         TICKETS_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, tickets_search)],
-        TICKETS_SELECT: [CallbackQueryHandler(tickets_select, pattern="^ticket_select_\d+$")],
+        TICKETS_SELECT: [CallbackQueryHandler(tickets_select, pattern=r"^ticket_select_\d+$")],
     },
     fallbacks=[CommandHandler("cancel", moderation_menu)],
     allow_reentry=True,
