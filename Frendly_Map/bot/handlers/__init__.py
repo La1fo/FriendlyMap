@@ -10,7 +10,7 @@ from .profile import (
     profile_ticket_close_handler,
 )
 from .add_location import add_location_handler
-from .moderation import pending_handler, moderation_callback_handler
+from .moderation import pending_handler, moderation_callback_handler, moderation_detail_handler
 from .moderation_menu import (
     moderation_menu_handler,
     moderation_menu_callback,
@@ -21,6 +21,7 @@ from .moderation_menu import (
     moderation_close_ticket_handler,
     moderation_ticket_back_handler,
     moderation_ticket_close_handler,
+    moderation_delete_back_handler,
 )
 from .map import map_command_handler, map_menu_handler, map_callback_handler
 from .leaderboard import leaderboard_handler, leaderboard_menu_handler, leaderboard_callback_handler
@@ -64,6 +65,7 @@ def get_all_handlers():
         achievements_callback_handler,
         pending_handler,
         moderation_callback_handler,
+        moderation_detail_handler,
         moderation_menu_handler,
         moderation_menu_callback,
         moderation_locations_handler,
@@ -73,6 +75,7 @@ def get_all_handlers():
         moderation_close_ticket_handler,
         moderation_ticket_back_handler,
         moderation_ticket_close_handler,
+        moderation_delete_back_handler,
         faq_handler,
         faq_add_handler,
         faq_callback_handler,

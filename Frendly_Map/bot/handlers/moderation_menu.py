@@ -1,6 +1,5 @@
 from datetime import datetime
 
-from sqlalchemy import or_
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     CallbackQueryHandler,
@@ -19,9 +18,9 @@ from bot.models.support_ticket import SupportMessage, SupportTicket
 from bot.models.user import User
 from bot.utils.common import is_admin
 
-POINTS_ACTION, POINTS_SEARCH, POINTS_SELECT_USER, POINTS_TYPE, POINTS_AMOUNT = range(5)
-DEL_SEARCH, DEL_SELECT, DEL_REASON = range(5, 8)
-TICKETS_MENU, TICKETS_SEARCH, TICKETS_SELECT = range(8, 11)
+POINTS_ACTION, POINTS_TYPE, POINTS_SELECT_USER, POINTS_AMOUNT, POINTS_CUSTOM = range(5)
+DEL_SELECT = 5
+TICKETS_MENU, TICKETS_SEARCH, TICKETS_SELECT = range(6, 9)
 
 
 def _ensure_admin(update: Update) -> bool:
@@ -54,6 +53,39 @@ def _ticket_actions_keyboard() -> ReplyKeyboardMarkup:
         [["◀️ Назад", "✅ Закрыть тикет"]],
         resize_keyboard=True
     )
+
+
+def _back_reply_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup([["◀️ Назад"]], resize_keyboard=True)
+
+
+async def _render_points_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    with get_db_context() as db:
+        users = db.query(User).order_by(User.id.desc()).limit(20).all()
+
+    if not users:
+        await _show_moderation_menu(update, context)
+        return
+
+    keyboard = []
+    for user in users:
+        label = f"@{user.username}" if user.username else "Без ника"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"points_user_{user.id}")])
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_points")])
+    menu_message_id = context.user_data.get("moderation_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "Выберите пользователя:",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        sent = await update.message.reply_text(
+            "Выберите пользователя:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        context.user_data["moderation_menu_message_id"] = sent.message_id
 
 
 async def _render_tickets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,10 +161,10 @@ async def points_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("points_data", None)
     context.user_data["moderation_menu_message_id"] = query.message.message_id
     await query.edit_message_text(
-        "Выберите действие:",
+        "Что сделать?",
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("➕ Добавить", callback_data="points_add"),
+                InlineKeyboardButton("➕ Начислить", callback_data="points_add"),
                 InlineKeyboardButton("➖ Списать", callback_data="points_sub"),
             ],
             [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
@@ -146,62 +178,12 @@ async def points_choose_action(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     action = "add" if query.data == "points_add" else "sub"
     context.user_data["points_data"] = {"action": action}
-    await query.edit_message_text("Введите @username или ID пользователя для поиска:")
-    return POINTS_SEARCH
-
-
-async def points_search_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    term = update.message.text.strip()
-    with get_db_context() as db:
-        if term.isdigit():
-            users = db.query(User).filter(User.id == int(term)).all()
-        else:
-            users = db.query(User).filter(
-                or_(
-                    User.username.ilike(f"%{term}%"),
-                    User.first_name.ilike(f"%{term}%"),
-                )
-            ).limit(10).all()
-
-    if not users:
-        await update.message.reply_text("Пользователь не найден. Попробуйте снова:")
-        return POINTS_SEARCH
-
-    keyboard = [
-        [InlineKeyboardButton(
-            f"{user.username or user.first_name or 'Без имени'} ({user.id})",
-            callback_data=f"points_user_{user.id}"
-        )]
-        for user in users
-    ]
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_points")])
-    menu_message_id = context.user_data.get("moderation_menu_message_id")
-    if menu_message_id:
-        await context.bot.edit_message_text(
-            "Выберите пользователя:",
-            chat_id=update.effective_user.id,
-            message_id=menu_message_id,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    else:
-        await update.message.reply_text(
-            "Выберите пользователя:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    return POINTS_SELECT_USER
-
-
-async def points_select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = int(query.data.split("_")[-1])
-    context.user_data.setdefault("points_data", {})["user_id"] = user_id
     await query.edit_message_text(
-        "Какие баллы изменяем?",
+        "Что изменить?",
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⭐ Обычные", callback_data="points_type_regular"),
-                InlineKeyboardButton("🎯 Ранговые", callback_data="points_type_rank"),
+                InlineKeyboardButton("⭐ Баллы", callback_data="points_type_regular"),
+                InlineKeyboardButton("🎯 Ранговые очки", callback_data="points_type_rank"),
             ],
             [InlineKeyboardButton("◀️ Назад", callback_data="mod_points")],
         ])
@@ -209,51 +191,118 @@ async def points_select_user(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return POINTS_TYPE
 
 
+async def points_select_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = int(query.data.split("_")[-1])
+    context.user_data.setdefault("points_data", {})["user_id"] = user_id
+    action_label = "Начислить" if context.user_data.get("points_data", {}).get("action") == "add" else "Списать"
+    type_label = "баллы" if context.user_data.get("points_data", {}).get("type") == "regular" else "ранговые очки"
+    await query.edit_message_text(
+        f"{action_label} {type_label}. Выберите количество:",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("1", callback_data="points_amount_1"),
+                InlineKeyboardButton("5", callback_data="points_amount_5"),
+                InlineKeyboardButton("10", callback_data="points_amount_10"),
+            ],
+            [
+                InlineKeyboardButton("20", callback_data="points_amount_20"),
+                InlineKeyboardButton("Другое", callback_data="points_amount_custom"),
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="points_type_back")],
+        ])
+    )
+    return POINTS_AMOUNT
+
+
 async def points_choose_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     points_type = "regular" if query.data == "points_type_regular" else "rank"
     context.user_data.setdefault("points_data", {})["type"] = points_type
-    await query.edit_message_text("Введите число баллов:")
-    return POINTS_AMOUNT
+    await _render_points_users(update, context)
+    return POINTS_SELECT_USER
 
 
-async def points_apply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def _apply_points_change(db, data: dict, amount: int):
+    delta = amount if data.get("action") == "add" else -amount
+    user = db.query(User).filter(User.id == data["user_id"]).first()
+    if not user:
+        return None, None
+
+    if data.get("type") == "rank":
+        user.pts = user.pts + delta
+        new_value = user.pts
+        label = "ранговых"
+    else:
+        user.points = max(user.points + delta, 0)
+        new_value = user.points
+        label = "обычных"
+    db.commit()
+    return new_value, label
+
+
+async def points_apply(update: Update, context: ContextTypes.DEFAULT_TYPE, amount: int | None = None):
     data = context.user_data.get("points_data", {})
     if "user_id" not in data:
         await update.message.reply_text("⚠️ Пользователь не выбран.")
         return ConversationHandler.END
 
-    try:
-        amount = int(update.message.text.strip())
-    except ValueError:
-        await update.message.reply_text("Введите целое число:")
-        return POINTS_AMOUNT
+    if amount is None:
+        try:
+            amount = int(update.message.text.strip())
+        except ValueError:
+            await update.message.reply_text("Введите целое число:")
+            return POINTS_CUSTOM
 
-    delta = amount if data.get("action") == "add" else -amount
     with get_db_context() as db:
-        user = db.query(User).filter(User.id == data["user_id"]).first()
-        if not user:
-            await update.message.reply_text("⚠️ Пользователь не найден.")
-            return ConversationHandler.END
+        new_value, label = _apply_points_change(db, data, amount)
 
-        if data.get("type") == "rank":
-            user.pts = user.pts + delta
-            new_value = user.pts
-            label = "ранговых"
-        else:
-            user.points = max(user.points + delta, 0)
-            new_value = user.points
-            label = "обычных"
-        db.commit()
+    if new_value is None:
+        await update.message.reply_text("⚠️ Пользователь не найден.")
+        return ConversationHandler.END
 
     await update.message.reply_text(
         f"✅ Готово. Новый баланс {label} баллов: {new_value}",
         reply_markup=ReplyKeyboardRemove()
     )
     context.user_data.pop("points_data", None)
-    await _show_moderation_menu(update, context)
-    return ConversationHandler.END
+    await _render_points_users(update, context)
+    return POINTS_SELECT_USER
+
+
+async def points_amount_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    choice = query.data.split("_")[-1]
+    if choice == "custom":
+        await query.edit_message_text("Введите число:")
+        return POINTS_CUSTOM
+    amount = int(choice)
+    data = context.user_data.get("points_data", {})
+    with get_db_context() as db:
+        new_value, label = _apply_points_change(db, data, amount)
+
+    if new_value is None:
+        await query.message.reply_text("⚠️ Пользователь не найден.")
+        return ConversationHandler.END
+
+    await query.message.reply_text(
+        f"✅ Готово. Новый баланс {label} баллов: {new_value}",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    context.user_data.pop("points_data", None)
+    await _render_points_users(update, context)
+    return POINTS_SELECT_USER
+
+
+async def points_type_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("points_data", None)
+    await points_start(update, context)
+    return POINTS_ACTION
 
 
 async def delete_location_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -264,27 +313,32 @@ async def delete_location_start(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     context.user_data["moderation_menu_message_id"] = query.message.message_id
-    await query.edit_message_text("Введите название или ID локации для поиска:")
-    return DEL_SEARCH
+    context.user_data["delete_locations_active"] = True
+    await query.edit_message_text("Выберите локацию:", reply_markup=InlineKeyboardMarkup([]))
+    await update.effective_message.reply_text(
+        "Меню удаления локаций.",
+        reply_markup=_back_reply_keyboard()
+    )
+    await render_delete_locations(update, context)
+    return DEL_SELECT
 
 
-async def delete_location_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    term = update.message.text.strip()
+async def render_delete_locations(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with get_db_context() as db:
-        if term.isdigit():
-            locations = db.query(Location).filter(
-                Location.id == int(term),
-                Location.status != "deleted"
-            ).all()
-        else:
-            locations = db.query(Location).filter(
-                Location.name.ilike(f"%{term}%"),
-                Location.status != "deleted"
-            ).limit(10).all()
+        locations = db.query(Location).filter(Location.status != "deleted").limit(20).all()
 
     if not locations:
-        await update.message.reply_text("Локации не найдены. Попробуйте снова:")
-        return DEL_SEARCH
+        menu_message_id = context.user_data.get("moderation_menu_message_id")
+        if menu_message_id:
+            await context.bot.edit_message_text(
+                "Локаций нет.",
+                chat_id=update.effective_user.id,
+                message_id=menu_message_id,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("◀️ Назад", callback_data="moderation")]
+                ])
+            )
+        return
 
     keyboard = [
         [InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"del_loc_{loc.id}")]
@@ -300,8 +354,13 @@ async def delete_location_search(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
-        await update.message.reply_text("Выберите локацию:", reply_markup=InlineKeyboardMarkup(keyboard))
-    return DEL_SELECT
+        target = update.message or (update.callback_query.message if update.callback_query else None)
+        if target:
+            sent = await target.reply_text(
+                "Выберите локацию:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            context.user_data["moderation_menu_message_id"] = sent.message_id
 
 
 async def delete_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -309,6 +368,21 @@ async def delete_location_select(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     loc_id = int(query.data.split("_")[-1])
     context.user_data["delete_loc_id"] = loc_id
+    await query.edit_message_text(
+        "Действия с локацией:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("ℹ️ Подробнее", callback_data=f"del_loc_info_{loc_id}")],
+            [InlineKeyboardButton("🗑 Удалить", callback_data=f"del_loc_confirm_{loc_id}")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="mod_delete_location")],
+        ])
+    )
+    return DEL_SELECT
+
+
+async def delete_location_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    loc_id = int(query.data.split("_")[-1])
     with get_db_context() as db:
         loc = db.query(Location).filter(Location.id == loc_id).first()
         photos = (
@@ -320,7 +394,7 @@ async def delete_location_select(update: Update, context: ContextTypes.DEFAULT_T
 
     if not loc:
         await query.edit_message_text("⚠️ Локация не найдена.")
-        return ConversationHandler.END
+        return
 
     info = (
         f"📍 {loc.name}\n"
@@ -328,34 +402,41 @@ async def delete_location_select(update: Update, context: ContextTypes.DEFAULT_T
         f"🌍 {loc.latitude}, {loc.longitude}\n"
         f"🗺️ Статус: {loc.status}"
     )
-    await query.edit_message_text(info + "\n\nУкажите причину удаления:")
-    for photo in photos[:3]:
+    await query.edit_message_text(
+        info,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data=f"del_loc_{loc_id}")],
+        ])
+    )
+    for photo in photos[:5]:
         await context.bot.send_photo(chat_id=query.message.chat_id, photo=photo.file_id)
-    return DEL_REASON
 
 
-async def delete_location_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    loc_id = context.user_data.get("delete_loc_id")
-    if not loc_id:
-        await update.message.reply_text("⚠️ Локация не выбрана.")
-        return ConversationHandler.END
-
-    reason = update.message.text.strip()
+async def delete_location_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    loc_id = int(query.data.split("_")[-1])
     with get_db_context() as db:
         loc = db.query(Location).filter(Location.id == loc_id).first()
         if not loc:
-            await update.message.reply_text("⚠️ Локация не найдена.")
-            return ConversationHandler.END
+            await query.edit_message_text("⚠️ Локация не найдена.")
+            return
         loc.status = "deleted"
-        loc.moderation_comment = reason
         loc.moderated_at = datetime.utcnow()
         loc.approved_by = update.effective_user.id
         db.commit()
 
     context.user_data.pop("delete_loc_id", None)
-    await update.message.reply_text("✅ Локация удалена и отмечена причиной.")
+    await query.edit_message_text("✅ Локация удалена.")
+    await render_delete_locations(update, context)
+
+
+async def delete_locations_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("delete_locations_active"):
+        return
+    context.user_data.pop("delete_locations_active", None)
+    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
     await _show_moderation_menu(update, context)
-    return ConversationHandler.END
 
 
 async def tickets_menu_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -535,10 +616,13 @@ points_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(points_start, pattern="^mod_points$")],
     states={
         POINTS_ACTION: [CallbackQueryHandler(points_choose_action, pattern="^points_(add|sub)$")],
-        POINTS_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, points_search_user)],
-        POINTS_SELECT_USER: [CallbackQueryHandler(points_select_user, pattern="^points_user_\d+$")],
-        POINTS_TYPE: [CallbackQueryHandler(points_choose_type, pattern="^points_type_(regular|rank)$")],
-        POINTS_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, points_apply)],
+        POINTS_TYPE: [
+            CallbackQueryHandler(points_choose_type, pattern="^points_type_(regular|rank)$"),
+            CallbackQueryHandler(points_type_back, pattern="^points_type_back$"),
+        ],
+        POINTS_SELECT_USER: [CallbackQueryHandler(points_select_user, pattern="^points_user_\\d+$")],
+        POINTS_AMOUNT: [CallbackQueryHandler(points_amount_choice, pattern="^points_amount_")],
+        POINTS_CUSTOM: [MessageHandler(filters.TEXT & ~filters.COMMAND, points_apply)],
     },
     fallbacks=[CommandHandler("cancel", moderation_menu)],
     allow_reentry=True,
@@ -547,9 +631,11 @@ points_handler = ConversationHandler(
 delete_location_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(delete_location_start, pattern="^mod_delete_location$")],
     states={
-        DEL_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_location_search)],
-        DEL_SELECT: [CallbackQueryHandler(delete_location_select, pattern="^del_loc_\d+$")],
-        DEL_REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_location_reason)],
+        DEL_SELECT: [
+            CallbackQueryHandler(delete_location_select, pattern="^del_loc_\\d+$"),
+            CallbackQueryHandler(delete_location_info, pattern="^del_loc_info_\\d+$"),
+            CallbackQueryHandler(delete_location_confirm, pattern="^del_loc_confirm_\\d+$"),
+        ],
     },
     fallbacks=[CommandHandler("cancel", moderation_menu)],
     allow_reentry=True,
@@ -569,3 +655,4 @@ tickets_handler = ConversationHandler(
 moderation_close_ticket_handler = CallbackQueryHandler(close_ticket_by_moderator, pattern="^ticket_close_\\d+$")
 moderation_ticket_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), moderation_ticket_back)
 moderation_ticket_close_handler = MessageHandler(filters.Regex("^✅ Закрыть тикет$"), moderation_ticket_close)
+moderation_delete_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), delete_locations_back)
