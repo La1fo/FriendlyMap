@@ -19,6 +19,9 @@ async def post_init(application: Application):
         ("leaderboard", "Топ пользователей"),
         ("achievements", "Достижения"),
         ("pending", "Модерация локаций"),
+        ("moderation", "Панель модерации"),
+        ("support", "Поддержка"),
+        ("faq", "FAQ"),
     ])
     init_db()
     with get_db_context() as db:

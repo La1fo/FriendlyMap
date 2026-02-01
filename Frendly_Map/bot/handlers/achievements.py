@@ -1,6 +1,6 @@
 import json
 from telegram import Update
-from telegram.ext import CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 
 from bot.database import get_db_context
 from bot.models.achievement import Achievement
@@ -8,6 +8,12 @@ from bot.services.achievements_manager import AchievementsManager
 
 
 async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.answer()
+        chat = update.callback_query.message
+    else:
+        chat = update.message
+
     user_id = update.effective_user.id
     manager = AchievementsManager()
 
@@ -47,7 +53,7 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             lines.append("")
 
-    await update.message.reply_text("\n".join(lines).strip(), parse_mode="HTML")
+    await chat.reply_text("\n".join(lines).strip(), parse_mode="HTML")
 
 
 def _get_target(achievement: Achievement) -> int:
@@ -60,3 +66,4 @@ def _get_target(achievement: Achievement) -> int:
 
 achievements_handler = CommandHandler("achievements", achievements)
 achievements_menu_handler = MessageHandler(filters.Regex("^(🏆 Достижения|achievements)$"), achievements)
+achievements_callback_handler = CallbackQueryHandler(achievements, pattern="^achievements$")

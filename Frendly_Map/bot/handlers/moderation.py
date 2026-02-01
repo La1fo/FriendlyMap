@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, Message
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
 
 from datetime import datetime
@@ -9,17 +9,16 @@ from bot.utils.common import is_admin
 from bot.services.achievements_manager import AchievementsManager
 
 
-async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    if not is_admin(user.id):
-        await update.message.reply_text("⛔ Только для модераторов.")
+async def send_pending_locations(chat: Message, user_id: int):
+    if not is_admin(user_id):
+        await chat.reply_text("⛔ Только для модераторов.")
         return
 
     with get_db_context() as db:
         locations = db.query(Location).filter(Location.status == "pending").all()
 
     if not locations:
-        await update.message.reply_text("🎉 Нет локаций на модерацию")
+        await chat.reply_text("🎉 Нет локаций на модерацию")
         return
 
     for loc in locations:
@@ -37,7 +36,11 @@ async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🌍 {loc.latitude}, {loc.longitude}"
         )
 
-        await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+        await chat.reply_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_pending_locations(update.message, update.effective_user.id)
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

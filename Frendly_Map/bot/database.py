@@ -36,4 +36,6 @@ def init_db():
     from bot.models.achievement import Achievement  # noqa: F401
     from bot.models.season import Season  # noqa: F401
     from bot.models.user_achievement import UserAchievement  # noqa: F401
+    from bot.models.faq_entry import FaqEntry  # noqa: F401
+    from bot.models.support_ticket import SupportTicket, SupportMessage  # noqa: F401
     Base.metadata.create_all(bind=engine)

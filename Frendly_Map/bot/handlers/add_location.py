@@ -1,7 +1,11 @@
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
-    MessageHandler, CommandHandler, ConversationHandler,
-    ContextTypes, filters
+    CallbackQueryHandler,
+    MessageHandler,
+    CommandHandler,
+    ConversationHandler,
+    ContextTypes,
+    filters,
 )
 from bot.database import get_db_context
 from bot.services.location_service import LocationService
@@ -11,7 +15,13 @@ from bot.utils.users import get_or_create_user
 ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_PHOTO, CONFIRM = range(5)
 
 async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📍 Введи название локации:")
+    if update.callback_query:
+        await update.callback_query.answer()
+        chat = update.callback_query.message
+    else:
+        chat = update.message
+
+    await chat.reply_text("📍 Введи название локации:")
     return ASK_NAME
 
 async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -118,6 +128,7 @@ add_location_handler = ConversationHandler(
     entry_points=[
         CommandHandler("add", start_add),
         MessageHandler(filters.Regex("^(➕ Добавить|add)$"), start_add),
+        CallbackQueryHandler(start_add, pattern="^add_location$"),
     ],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_description)],

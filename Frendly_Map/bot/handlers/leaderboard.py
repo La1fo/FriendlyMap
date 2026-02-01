@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 
 from bot.database import get_db_context
 from bot.models.user import User
@@ -7,6 +7,12 @@ from bot.services.leaderboard_service import LeaderboardService
 
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.answer()
+        chat = update.callback_query.message
+    else:
+        chat = update.message
+
     with get_db_context() as db:
         LeaderboardService.ensure_sample_users(db)
         users = LeaderboardService.get_top_users(db, limit=10)
@@ -14,7 +20,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_user = db.get(User, update.effective_user.id)
 
     if not users:
-        await update.message.reply_text("Рейтинг пока пуст 🤷")
+        await chat.reply_text("Рейтинг пока пуст 🤷")
         return
 
     lines = ["🏆 Таблица лидеров (pts):"]
@@ -33,8 +39,9 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🏷️ Твой ранг: {LeaderboardService.get_rank_title(current_user.pts)}",
         ])
 
-    await update.message.reply_text("\n".join(lines))
+    await chat.reply_text("\n".join(lines))
 
 
 leaderboard_handler = CommandHandler("leaderboard", leaderboard)
 leaderboard_menu_handler = MessageHandler(filters.Regex("^(🏆 Лидеры|leaderboard)$"), leaderboard)
+leaderboard_callback_handler = CallbackQueryHandler(leaderboard, pattern="^leaderboard$")

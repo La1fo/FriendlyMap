@@ -2,6 +2,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import CommandHandler, ContextTypes
 
 from bot.database import get_db_context
+from bot.keyboards.main_menu import get_main_menu
 from bot.utils.users import get_or_create_user
 
 MAIN_MENU = [
@@ -23,6 +24,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Привет, {user.first_name}! 👋\n"
         "Я Friendly Map Bot — помогу тебе отмечать места и открывать карту!",
         reply_markup=keyboard
+    )
+    await update.message.reply_text(
+        "Выбери действие в меню ниже:",
+        reply_markup=get_main_menu(user.id)
     )
 
 start_handler = CommandHandler("start", start)
