@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import ReplyKeyboardRemove, Update
 from telegram.ext import CommandHandler, ContextTypes
 
 from bot.database import get_db_context
@@ -14,7 +14,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"Привет, {user.first_name}! 👋\n"
-        "Я Friendly Map Bot — помогу тебе отмечать места и открывать карту!"
+        "Я Friendly Map Bot — помогу тебе отмечать места и открывать карту!",
+        reply_markup=ReplyKeyboardRemove()
     )
     unread = bool(context.bot_data.get("mod_unread_tickets"))
     menu_message = await update.message.reply_text(
