@@ -27,12 +27,15 @@ def _ensure_admin(update: Update) -> bool:
     return is_admin(update.effective_user.id)
 
 
-def _moderation_keyboard() -> InlineKeyboardMarkup:
+def _moderation_keyboard(unread_tickets: bool) -> InlineKeyboardMarkup:
+    tickets_label = "🎫 Тикеты"
+    if unread_tickets:
+        tickets_label += " 🔔"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📍 Модерация локаций", callback_data="mod_locations")],
         [InlineKeyboardButton("⚖️ Баллы и ранги", callback_data="mod_points")],
         [InlineKeyboardButton("🗑 Удаление локаций", callback_data="mod_delete_location")],
-        [InlineKeyboardButton("🎫 Тикеты", callback_data="mod_tickets")],
+        [InlineKeyboardButton(tickets_label, callback_data="mod_tickets")],
         [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")],
     ])
 
@@ -111,17 +114,18 @@ async def _render_tickets_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def _show_moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     menu_message_id = context.user_data.get("moderation_menu_message_id")
+    unread_tickets = bool(context.bot_data.get("mod_unread_tickets"))
     if menu_message_id:
         await context.bot.edit_message_text(
             "⚙️ Панель модерации:",
             chat_id=update.effective_user.id,
             message_id=menu_message_id,
-            reply_markup=_moderation_keyboard()
+            reply_markup=_moderation_keyboard(unread_tickets)
         )
     else:
         sent = await (update.message or update.callback_query.message).reply_text(
             "⚙️ Панель модерации:",
-            reply_markup=_moderation_keyboard()
+            reply_markup=_moderation_keyboard(unread_tickets)
         )
         context.user_data["moderation_menu_message_id"] = sent.message_id
 
@@ -436,6 +440,10 @@ async def delete_locations_back(update: Update, context: ContextTypes.DEFAULT_TY
         return
     context.user_data.pop("delete_locations_active", None)
     await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
     await _show_moderation_menu(update, context)
 
 
@@ -486,13 +494,13 @@ async def tickets_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Тикеты не найдены. Попробуйте снова:")
         return TICKETS_SEARCH
 
-    keyboard = [
-        [InlineKeyboardButton(
-            f"#{ticket.id} · {user.username or user.first_name or user.id}",
-            callback_data=f"ticket_select_{ticket.id}"
-        )]
-        for ticket, user in results
-    ]
+    unread = context.bot_data.get("mod_unread_tickets", set())
+    keyboard = []
+    for ticket, user in results:
+        label = f"#{ticket.id} · {user.username or user.first_name or user.id}"
+        if isinstance(unread, set) and ticket.id in unread:
+            label += " 🔔"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{ticket.id}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_tickets")])
     menu_message_id = context.user_data.get("moderation_menu_message_id")
     if menu_message_id:
@@ -513,6 +521,9 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticket_id = int(query.data.split("_")[-1])
     context.user_data["moderation_ticket_id"] = ticket_id
     context.user_data["moderation_ticket_view"] = True
+    unread = context.bot_data.get("mod_unread_tickets")
+    if isinstance(unread, set) and ticket_id in unread:
+        unread.discard(ticket_id)
 
     with get_db_context() as db:
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
@@ -577,6 +588,10 @@ async def moderation_ticket_back(update: Update, context: ContextTypes.DEFAULT_T
         return
     context.user_data.pop("moderation_ticket_view", None)
     await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
     await _render_tickets_menu(update, context)
 
 
@@ -600,6 +615,10 @@ async def moderation_ticket_close(update: Update, context: ContextTypes.DEFAULT_
 
     context.user_data.pop("moderation_ticket_view", None)
     await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
     await update.message.reply_text("✅ Тикет закрыт и перемещен в архив.")
     await context.bot.send_message(
         chat_id=user_id,

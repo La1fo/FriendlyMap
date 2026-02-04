@@ -8,7 +8,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     message = query.message
-    menu = get_main_menu(update.effective_user.id)
+    unread = bool(context.bot_data.get("mod_unread_tickets"))
+    menu = get_main_menu(update.effective_user.id, unread_moderation=unread)
     await query.edit_message_text("Главное меню:", reply_markup=menu)
     context.user_data["main_menu_message_id"] = message.message_id
 

@@ -233,6 +233,10 @@ async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         context.user_data["profile_menu_message_id"] = sent.message_id
     await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
 
 
 async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -260,6 +264,10 @@ async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.pop("support_ticket_id", None)
     context.user_data.pop("profile_ticket_view", None)
     await update.message.reply_text("✅ Тикет закрыт.", reply_markup=ReplyKeyboardRemove())
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
     status = "closed"
     context.user_data["profile_ticket_status"] = status
     await profile_ticket_back(update, context)

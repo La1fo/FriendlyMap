@@ -16,9 +16,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Привет, {user.first_name}! 👋\n"
         "Я Friendly Map Bot — помогу тебе отмечать места и открывать карту!"
     )
+    unread = bool(context.bot_data.get("mod_unread_tickets"))
     menu_message = await update.message.reply_text(
         "Главное меню:",
-        reply_markup=get_main_menu(user.id)
+        reply_markup=get_main_menu(user.id, unread_moderation=unread)
     )
     context.user_data["main_menu_message_id"] = menu_message.message_id
 

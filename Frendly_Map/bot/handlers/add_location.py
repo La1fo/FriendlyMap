@@ -31,6 +31,24 @@ def _photo_keyboard() -> ReplyKeyboardMarkup:
 def _confirm_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup([[CONFIRM_TEXT], [CANCEL_TEXT]], resize_keyboard=True)
 
+
+async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    unread = bool(context.bot_data.get("mod_unread_tickets"))
+    menu_id = context.user_data.get("main_menu_message_id")
+    if menu_id:
+        await context.bot.edit_message_text(
+            "Главное меню:",
+            chat_id=update.effective_user.id,
+            message_id=menu_id,
+            reply_markup=get_main_menu(update.effective_user.id, unread_moderation=unread)
+        )
+    else:
+        sent = await update.message.reply_text(
+            "Главное меню:",
+            reply_markup=get_main_menu(update.effective_user.id, unread_moderation=unread)
+        )
+        context.user_data["main_menu_message_id"] = sent.message_id
+
 async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await update.callback_query.answer()
@@ -91,6 +109,7 @@ async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text in {SKIP_PHOTO_TEXT, CANCEL_TEXT}:
         if update.message.text == CANCEL_TEXT:
             return await cancel(update, context)
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
         return await confirm(update, context)
 
     if update.message.photo:
@@ -123,6 +142,7 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text != CONFIRM_TEXT:
         await update.message.reply_text("Выбери «Подтвердить» или «Отменить».")
         return CONFIRM
+    await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
 
     user = update.effective_user
     d = context.user_data
@@ -151,20 +171,18 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     if completed:
         await update.message.reply_text(achievements.format_completion_message(completed))
+    await _show_main_menu(update, context)
     context.user_data.clear()
-    await update.message.reply_text(
-        "Главное меню:",
-        reply_markup=get_main_menu(user.id)
-    )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Отменено ❌", reply_markup=ReplyKeyboardRemove())
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
+    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await _show_main_menu(update, context)
     context.user_data.clear()
-    await update.message.reply_text(
-        "Главное меню:",
-        reply_markup=get_main_menu(update.effective_user.id)
-    )
     return ConversationHandler.END
 
 add_location_handler = ConversationHandler(
@@ -191,5 +209,4 @@ add_location_handler = ConversationHandler(
         MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
     ],
     allow_reentry=True,
-    per_message=True,
 )

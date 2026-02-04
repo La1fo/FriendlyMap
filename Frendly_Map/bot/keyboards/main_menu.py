@@ -2,7 +2,7 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.config import settings
 
-def get_main_menu(user_id: int):
+def get_main_menu(user_id: int, unread_moderation: bool = False):
     buttons = [
         [InlineKeyboardButton("🗺️ КАРТА", web_app={"url": settings.WEB_APP_URL + "/map"})],
         [InlineKeyboardButton("🏪 МАГАЗИН", web_app={"url": settings.WEB_APP_URL + "/shop"})],
@@ -16,6 +16,9 @@ def get_main_menu(user_id: int):
 
     # Админ-кнопка
     if str(user_id) in settings.ADMIN_IDS.split(","):
-        buttons.append([InlineKeyboardButton("⚙️ МОДЕРАЦИЯ", callback_data="moderation")])
+        label = "⚙️ МОДЕРАЦИЯ"
+        if unread_moderation:
+            label += " 🔔"
+        buttons.append([InlineKeyboardButton(label, callback_data="moderation")])
 
     return InlineKeyboardMarkup(buttons)

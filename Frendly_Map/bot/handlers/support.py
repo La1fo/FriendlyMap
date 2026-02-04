@@ -1,7 +1,11 @@
 from datetime import datetime
-from html import escape
-
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -10,13 +14,20 @@ from telegram.ext import (
     filters,
 )
 
-from bot.config import settings
 from bot.database import get_db_context
 from bot.models.support_ticket import SupportTicket, SupportMessage
 from typing import Optional
 
 from bot.models.user import User
 from bot.utils.common import is_admin
+
+SUPPORT_OPEN_TEXT = "🟢 Открыть тикет"
+SUPPORT_BACK_TEXT = "◀️ Назад"
+SUPPORT_CLOSE_TEXT = "✅ Закрыть тикет"
+
+
+def _get_mod_unread(context: ContextTypes.DEFAULT_TYPE) -> set[int]:
+    return context.bot_data.setdefault("mod_unread_tickets", set())
 
 
 def _build_support_chat_keyboard(ticket_id: int, is_admin_user: bool) -> InlineKeyboardMarkup:
@@ -29,16 +40,22 @@ def _build_support_chat_keyboard(ticket_id: int, is_admin_user: bool) -> InlineK
     return InlineKeyboardMarkup(buttons)
 
 
+def _support_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🟢 Открыть тикет", callback_data="support_open")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")],
+    ])
+
+
+def _support_chat_reply_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup([[SUPPORT_BACK_TEXT, SUPPORT_CLOSE_TEXT]], resize_keyboard=True)
+
+
 def _build_support_start_keyboard(ticket_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💬 Открыть чат", callback_data=f"support_chat_{ticket_id}")],
         [InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"support_close_{ticket_id}")],
     ])
-
-
-async def _send_to_admins(context: ContextTypes.DEFAULT_TYPE, text: str):
-    for admin_id in settings.ADMIN_IDS_LIST:
-        await context.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML")
 
 
 def _format_user(user: Optional[User], user_id: int) -> str:
@@ -48,15 +65,24 @@ def _format_user(user: Optional[User], user_id: int) -> str:
     return f"{name} (<code>{user_id}</code>)"
 
 
-async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def support_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await update.callback_query.answer()
-        chat = update.callback_query.message
+        await update.callback_query.edit_message_text(
+            "🆘 Поддержка",
+            reply_markup=_support_menu_keyboard()
+        )
+        context.user_data["support_menu_message_id"] = update.callback_query.message.message_id
     else:
-        chat = update.message
+        sent = await update.message.reply_text("🆘 Поддержка", reply_markup=_support_menu_keyboard())
+        context.user_data["support_menu_message_id"] = sent.message_id
+
+
+async def open_support_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
     user_id = update.effective_user.id
-
     with get_db_context() as db:
         ticket = (
             db.query(SupportTicket)
@@ -69,23 +95,67 @@ async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.commit()
             db.refresh(ticket)
 
-        user = db.query(User).filter(User.id == user_id).first()
-
     context.user_data["support_ticket_id"] = ticket.id
     context.user_data["support_chat_active"] = True
 
-    await chat.reply_text(
-        "🆘 Тикет поддержки открыт!\n"
-        "Напиши сообщение, и модератор ответит как сможет.",
-        reply_markup=_build_support_start_keyboard(ticket.id)
-    )
+    _get_mod_unread(context).add(ticket.id)
 
-    admin_text = (
-        "🆘 Новый тикет поддержки\n"
-        f"Пользователь: {_format_user(user, user_id)}\n"
-        f"Тикет: #{ticket.id}"
+    await query.edit_message_text(
+        f"🆘 Тикет #{ticket.id} открыт. Напиши сообщение.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="support")]
+        ])
     )
-    await _send_to_admins(context, admin_text)
+    await query.message.reply_text("Чат поддержки:", reply_markup=_support_chat_reply_keyboard())
+
+
+async def support_reply_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("support_chat_active"):
+        return
+    context.user_data.pop("support_chat_active", None)
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
+    menu_message_id = context.user_data.get("support_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "🆘 Поддержка",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=_support_menu_keyboard()
+        )
+    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+
+
+async def support_reply_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("support_chat_active"):
+        return
+    ticket_id = context.user_data.get("support_ticket_id")
+    if not ticket_id:
+        return
+    with get_db_context() as db:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        if ticket and ticket.status == "open":
+            ticket.status = "closed"
+            ticket.closed_at = datetime.utcnow()
+            ticket.closed_by = update.effective_user.id
+            db.commit()
+    context.user_data.pop("support_chat_active", None)
+    context.user_data.pop("support_ticket_id", None)
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
+    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    menu_message_id = context.user_data.get("support_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            "🆘 Поддержка",
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=_support_menu_keyboard()
+        )
 
 
 async def open_support_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -164,12 +234,11 @@ async def support_message_handler(update: Update, context: ContextTypes.DEFAULT_
         db.commit()
         user = db.query(User).filter(User.id == user_id).first()
 
-    admin_text = (
-        f"💬 Сообщение по тикету #{ticket_id}\n"
-        f"Пользователь: {_format_user(user, user_id)}\n\n"
-        f"{escape(message_text)}"
-    )
-    await _send_to_admins(context, admin_text)
+    _get_mod_unread(context).add(ticket_id)
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
     await update.message.reply_text("✅ Сообщение отправлено в поддержку.")
 
 
@@ -211,14 +280,18 @@ async def moderator_message_handler(update: Update, context: ContextTypes.DEFAUL
     await update.message.reply_text("✅ Ответ отправлен пользователю.")
 
 
-support_handler = CommandHandler("support", start_support)
+support_handler = CommandHandler("support", support_menu)
 
-support_callback_handler = CallbackQueryHandler(start_support, pattern="^support$")
+support_callback_handler = CallbackQueryHandler(support_menu, pattern="^support$")
+support_open_handler = CallbackQueryHandler(open_support_ticket, pattern="^support_open$")
 
-support_chat_handler = CallbackQueryHandler(open_support_chat, pattern="^support_chat_\d+$")
+support_chat_handler = CallbackQueryHandler(open_support_chat, pattern="^support_chat_\\d+$")
 
 support_close_handler = CallbackQueryHandler(close_support_ticket, pattern="^support_close_\d+$")
 
 support_message_router = MessageHandler(filters.TEXT & ~filters.COMMAND, support_message_handler)
+
+support_reply_back_handler = MessageHandler(filters.Regex(f"^{SUPPORT_BACK_TEXT}$"), support_reply_back)
+support_reply_close_handler = MessageHandler(filters.Regex(f"^{SUPPORT_CLOSE_TEXT}$"), support_reply_close)
 
 moderator_message_router = MessageHandler(filters.TEXT & ~filters.COMMAND, moderator_message_handler)

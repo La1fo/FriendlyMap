@@ -36,9 +36,12 @@ from .faq import (
 from .support import (
     support_handler,
     support_callback_handler,
+    support_open_handler,
     support_chat_handler,
     support_close_handler,
     support_message_router,
+    support_reply_back_handler,
+    support_reply_close_handler,
     moderator_message_router,
 )
 from .menu import main_menu_callback_handler
@@ -83,9 +86,12 @@ def get_all_handlers():
         faq_delete_confirm_handler,
         support_handler,
         support_callback_handler,
+        support_open_handler,
         support_chat_handler,
         support_close_handler,
         support_message_router,
+        support_reply_back_handler,
+        support_reply_close_handler,
         moderator_message_router,
         main_menu_callback_handler,
     ]
