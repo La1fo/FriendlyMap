@@ -112,6 +112,44 @@ async def _render_tickets_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data["moderation_menu_message_id"] = sent.message_id
 
 
+async def _render_tickets_list(update: Update, context: ContextTypes.DEFAULT_TYPE, status: str):
+    with get_db_context() as db:
+        results = (
+            db.query(SupportTicket, User)
+            .join(User, SupportTicket.user_id == User.id)
+            .filter(SupportTicket.status == status)
+            .order_by(SupportTicket.created_at.desc())
+            .limit(20)
+            .all()
+        )
+
+    title = "Активные тикеты" if status == "open" else "Архив тикетов"
+    if not results:
+        await _render_tickets_menu(update, context)
+        return
+
+    unread = context.bot_data.get("mod_unread_tickets", set())
+    keyboard = []
+    for ticket, user in results:
+        label = f"#{ticket.id} · {user.username or user.first_name or user.id}"
+        if isinstance(unread, set) and ticket.id in unread:
+            label += " 🔔"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{ticket.id}")])
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_tickets")])
+
+    menu_message_id = context.user_data.get("moderation_menu_message_id")
+    if menu_message_id:
+        await context.bot.edit_message_text(
+            title,
+            chat_id=update.effective_user.id,
+            message_id=menu_message_id,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        sent = await update.message.reply_text(title, reply_markup=InlineKeyboardMarkup(keyboard))
+        context.user_data["moderation_menu_message_id"] = sent.message_id
+
+
 async def _show_moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     menu_message_id = context.user_data.get("moderation_menu_message_id")
     unread_tickets = bool(context.bot_data.get("mod_unread_tickets"))
@@ -473,8 +511,8 @@ async def tickets_choose_section(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     status = "open" if query.data == "tickets_active" else "closed"
     context.user_data["tickets_status"] = status
-    await query.edit_message_text("Введите строку поиска (ID или username), или '-' чтобы показать все:")
-    return TICKETS_SEARCH
+    await _render_tickets_list(update, context, status)
+    return TICKETS_SELECT
 
 
 async def tickets_search(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -195,6 +195,7 @@ add_location_handler = ConversationHandler(
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_description)],
         ASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords)],
         ASK_LOCATION: [
+            MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
             MessageHandler(filters.LOCATION, get_coords),
             MessageHandler(filters.TEXT & ~filters.COMMAND, get_coords),
         ],
