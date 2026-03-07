@@ -89,9 +89,9 @@ def get_all_handlers():
         support_open_handler,
         support_chat_handler,
         support_close_handler,
-        support_message_router,
         support_reply_back_handler,
         support_reply_close_handler,
+        support_message_router,
         moderator_message_router,
         main_menu_callback_handler,
     ]

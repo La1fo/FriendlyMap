@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -62,6 +63,27 @@ def _back_reply_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup([["◀️ Назад"]], resize_keyboard=True)
 
 
+async def _safe_edit_menu_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    message_id: int,
+    text_value: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
+    try:
+        await context.bot.edit_message_text(
+            text_value,
+            chat_id=chat_id,
+            message_id=message_id,
+            reply_markup=reply_markup,
+        )
+        return True
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            return False
+        raise
+
+
 async def _render_points_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with get_db_context() as db:
         users = db.query(User).order_by(User.id.desc()).limit(20).all()
@@ -101,11 +123,12 @@ async def _render_tickets_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
     ])
     if menu_message_id:
-        await context.bot.edit_message_text(
-            "Выберите раздел тикетов:",
+        await _safe_edit_menu_message(
+            context,
             chat_id=update.effective_user.id,
             message_id=menu_message_id,
-            reply_markup=keyboard
+            text_value="Выберите раздел тикетов:",
+            reply_markup=keyboard,
         )
     else:
         sent = await update.message.reply_text("Выберите раздел тикетов:", reply_markup=keyboard)
@@ -139,11 +162,12 @@ async def _render_tickets_list(update: Update, context: ContextTypes.DEFAULT_TYP
 
     menu_message_id = context.user_data.get("moderation_menu_message_id")
     if menu_message_id:
-        await context.bot.edit_message_text(
-            title,
+        await _safe_edit_menu_message(
+            context,
             chat_id=update.effective_user.id,
             message_id=menu_message_id,
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            text_value=title,
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
     else:
         sent = await update.message.reply_text(title, reply_markup=InlineKeyboardMarkup(keyboard))

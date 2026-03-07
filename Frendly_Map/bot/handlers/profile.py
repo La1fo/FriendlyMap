@@ -262,7 +262,6 @@ async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYP
 
     context.user_data["support_chat_active"] = False
     context.user_data.pop("support_ticket_id", None)
-    context.user_data.pop("profile_ticket_view", None)
     await update.message.reply_text("✅ Тикет закрыт.", reply_markup=ReplyKeyboardRemove())
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
