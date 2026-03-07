@@ -1,5 +1,5 @@
 # bot/models/user_achievement.py
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, Boolean
+from sqlalchemy import BigInteger, Column, Integer, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .base import Base
@@ -8,7 +8,7 @@ class UserAchievement(Base):
     __tablename__ = "user_achievements"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     achievement_id = Column(Integer, ForeignKey("achievements.id"), nullable=False)
     season_id = Column(Integer, ForeignKey("seasons.id"), nullable=True)
     progress = Column(Integer, default=0)
