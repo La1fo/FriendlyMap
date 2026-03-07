@@ -19,7 +19,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Выбери действие в меню ниже:",
         reply_markup=get_main_menu(user.id, unread_moderation=unread)
     )
-    temp = await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    temp = await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
     try:
         await temp.delete()
     except Exception:
