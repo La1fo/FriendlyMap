@@ -147,6 +147,7 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     d = context.user_data
     achievements = AchievementsManager()
+    completion_message = None
 
     with get_db_context() as db:
         get_or_create_user(db, user)
@@ -163,14 +164,16 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
             LocationService.add_photo(db, loc.id, file_id, order_index=i)
 
         completed = achievements.apply_event(db, user.id, "location_submitted", 1)
+        if completed:
+            completion_message = achievements.format_completion_message(completed)
 
     await update.message.reply_text(
         "🎉 Локация отправлена на модерацию!\n"
         "После одобрения ты получишь баллы 💎",
         reply_markup=ReplyKeyboardRemove()
     )
-    if completed:
-        await update.message.reply_text(achievements.format_completion_message(completed))
+    if completion_message:
+        await update.message.reply_text(completion_message)
     await _show_main_menu(update, context)
     context.user_data.clear()
     return ConversationHandler.END
