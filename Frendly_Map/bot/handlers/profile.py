@@ -232,7 +232,7 @@ async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         context.user_data["profile_menu_message_id"] = sent.message_id
-    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:

@@ -477,7 +477,7 @@ async def delete_locations_back(update: Update, context: ContextTypes.DEFAULT_TY
     if not context.user_data.get("delete_locations_active"):
         return
     context.user_data.pop("delete_locations_active", None)
-    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:
@@ -625,7 +625,7 @@ async def moderation_ticket_back(update: Update, context: ContextTypes.DEFAULT_T
     if not context.user_data.get("moderation_ticket_view"):
         return
     context.user_data.pop("moderation_ticket_view", None)
-    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:
@@ -652,7 +652,7 @@ async def moderation_ticket_close(update: Update, context: ContextTypes.DEFAULT_
         db.commit()
 
     context.user_data.pop("moderation_ticket_view", None)
-    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:

@@ -180,7 +180,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:
         pass
-    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
     await _show_main_menu(update, context)
     context.user_data.clear()
     return ConversationHandler.END

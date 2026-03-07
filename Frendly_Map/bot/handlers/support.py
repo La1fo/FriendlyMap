@@ -125,7 +125,7 @@ async def support_reply_back(update: Update, context: ContextTypes.DEFAULT_TYPE)
             message_id=menu_message_id,
             reply_markup=_support_menu_keyboard()
         )
-    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
 
 
 async def support_reply_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -147,7 +147,7 @@ async def support_reply_close(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:
         pass
-    await update.message.reply_text(" ", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
     menu_message_id = context.user_data.get("support_menu_message_id")
     if menu_message_id:
         await context.bot.edit_message_text(
