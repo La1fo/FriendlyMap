@@ -151,6 +151,9 @@ def _ensure_support_columns() -> None:
             "file_name": "VARCHAR",
             "mime_type": "VARCHAR",
         },
+        "support_sessions": {
+            "mode": "VARCHAR NOT NULL DEFAULT 'idle'",
+        },
     }
 
     with engine.begin() as conn:

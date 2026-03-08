@@ -5,7 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot.database import get_db_context
-from bot.models.support_ticket import SupportMessage, SupportTicket
+from bot.models.support_ticket import SUPPORT_ACTIVE_STATUSES, SUPPORT_STATUS_CLOSED, SupportMessage, SupportTicket
 from bot.models.user import User
 from bot.services.support_state import set_active_ticket_id
 from bot.utils.rank import get_user_rank_display
@@ -29,12 +29,12 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = db.query(User).filter(User.id == uid).first()
         active_ticket = (
             db.query(SupportTicket)
-            .filter(SupportTicket.user_id == uid, SupportTicket.status == "open")
+            .filter(SupportTicket.user_id == uid, SupportTicket.status.in_(SUPPORT_ACTIVE_STATUSES))
             .first()
         )
         archived_tickets = (
             db.query(SupportTicket)
-            .filter(SupportTicket.user_id == uid, SupportTicket.status == "closed")
+            .filter(SupportTicket.user_id == uid, SupportTicket.status == SUPPORT_STATUS_CLOSED)
             .order_by(SupportTicket.closed_at.desc())
             .limit(5)
             .all()
@@ -127,7 +127,7 @@ def _ticket_view_keyboard(messages: list[dict[str, Any]], ticket_id: int, ticket
         icon = "🖼" if msg["message_type"] == "photo" else "📄"
         rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg['id']}", callback_data=f"profile_attach_{msg['id']}")])
 
-    if ticket_status == "open":
+    if ticket_status in SUPPORT_ACTIVE_STATUSES:
         rows.append([InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"profile_ticket_close_{ticket_id}")])
 
     rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"profile_tickets_{list_kind}")])
@@ -138,13 +138,13 @@ async def _render_profile_ticket_list(query, user_id: int, status: str):
     with get_db_context() as db:
         tickets = (
             db.query(SupportTicket)
-            .filter(SupportTicket.user_id == user_id, SupportTicket.status == status)
+            .filter(SupportTicket.user_id == user_id, SupportTicket.status.in_(SUPPORT_ACTIVE_STATUSES)) if status == "active" else db.query(SupportTicket).filter(SupportTicket.user_id == user_id, SupportTicket.status == SUPPORT_STATUS_CLOSED)
             .order_by(SupportTicket.created_at.desc())
             .all()
         )
 
     if not tickets:
-        empty_text = "Нет активных тикетов." if status == "open" else "Архив пуст."
+        empty_text = "Нет активных тикетов." if status == "active" else "Архив пуст."
         await query.edit_message_text(
             empty_text,
             reply_markup=InlineKeyboardMarkup([
@@ -153,7 +153,7 @@ async def _render_profile_ticket_list(query, user_id: int, status: str):
         )
         return
 
-    kind = "active" if status == "open" else "archive"
+    kind = "active" if status == "active" else "archive"
     keyboard = [
         [InlineKeyboardButton(f"#{ticket.id}", callback_data=f"profile_ticket_{kind}_{ticket.id}")]
         for ticket in tickets
@@ -166,7 +166,7 @@ async def profile_tickets_list(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     context.user_data["profile_menu_message_id"] = query.message.message_id
-    status = "open" if query.data.endswith("active") else "closed"
+    status = "active" if query.data.endswith("active") else "closed"
     await _render_profile_ticket_list(query, update.effective_user.id, status)
 
 
@@ -193,11 +193,11 @@ async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE
         ticket_status = ticket.status
 
         ticket.unread_for_user = False
-        set_active_ticket_id(db, update.effective_user.id, "user", ticket.id if ticket_status == "open" else None)
+        set_active_ticket_id(db, update.effective_user.id, "user", ticket.id if ticket_status in SUPPORT_ACTIVE_STATUSES else None)
         db.commit()
 
     history_text = _format_ticket_history(messages)
-    title = f"💬 Тикет #{ticket_id}\nСтатус: {'открыт' if ticket_status == 'open' else 'закрыт'}\n\n"
+    title = f"💬 Тикет #{ticket_id}\nСтатус: {'открыт' if ticket_status in SUPPORT_ACTIVE_STATUSES else 'закрыт'}\n\n"
     await query.edit_message_text(
         title + history_text,
         reply_markup=_ticket_view_keyboard(messages, ticket_id, ticket_status, list_kind),
@@ -214,12 +214,12 @@ async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYP
         if not ticket:
             await query.answer("⚠️ Тикет не найден.", show_alert=True)
             return
-        if ticket.status != "open":
+        if ticket.status == SUPPORT_STATUS_CLOSED:
             await query.answer("Тикет уже закрыт.", show_alert=True)
             await _render_profile_ticket_list(query, update.effective_user.id, "closed")
             return
 
-        ticket.status = "closed"
+        ticket.status = SUPPORT_STATUS_CLOSED
         ticket.closed_at = datetime.utcnow()
         ticket.closed_by = update.effective_user.id
         ticket.unread_for_user = False
@@ -227,7 +227,7 @@ async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYP
         set_active_ticket_id(db, update.effective_user.id, "user", None)
         db.commit()
 
-    await _render_profile_ticket_list(query, update.effective_user.id, "open")
+    await _render_profile_ticket_list(query, update.effective_user.id, "active")
 
 
 async def profile_ticket_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE):

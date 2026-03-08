@@ -21,7 +21,7 @@ class SupportFaqTests(unittest.TestCase):
 
     def test_support_session_persistence_primitives(self):
         db = self.Session()
-        ticket = SupportTicket(user_id=1, status="open", unread_for_moderator=True)
+        ticket = SupportTicket(user_id=1, status="new", unread_for_moderator=True)
         db.add(ticket)
         db.commit()
         db.refresh(ticket)
@@ -48,7 +48,7 @@ class SupportFaqTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", text)
 
     def test_profile_ticket_keyboard_hides_close_for_closed_ticket(self):
-        kb_open = _ticket_view_keyboard([], ticket_id=10, ticket_status="open", list_kind="active")
+        kb_open = _ticket_view_keyboard([], ticket_id=10, ticket_status="new", list_kind="active")
         kb_closed = _ticket_view_keyboard([], ticket_id=10, ticket_status="closed", list_kind="archive")
 
         open_labels = [btn.text for row in kb_open.inline_keyboard for btn in row]
@@ -63,7 +63,7 @@ class SupportFaqTests(unittest.TestCase):
             {"id": 2, "message_type": "document", "file_id": "d1", "file_name": "a.txt", "message": "Док"},
             {"id": 3, "message_type": "text", "file_id": None, "message": "Привет"},
         ]
-        kb = _ticket_view_keyboard(messages, ticket_id=1, ticket_status="open", list_kind="active")
+        kb = _ticket_view_keyboard(messages, ticket_id=1, ticket_status="new", list_kind="active")
         labels = [btn.text for row in kb.inline_keyboard for btn in row]
         self.assertIn("🖼 Вложение #1", labels)
         self.assertIn("📄 Вложение #2", labels)

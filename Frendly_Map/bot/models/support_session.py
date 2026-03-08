@@ -11,4 +11,5 @@ class SupportSession(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     scope = Column(String, nullable=False, index=True)  # user | moderator
     active_ticket_id = Column(Integer, ForeignKey("support_tickets.id"), nullable=True)
+    mode = Column(String, nullable=False, default="idle")  # idle | subject | reply
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

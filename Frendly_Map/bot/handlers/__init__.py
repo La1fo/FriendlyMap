@@ -21,6 +21,8 @@ from .moderation_menu import (
     moderation_close_ticket_handler,
     moderation_delete_back_handler,
     moderation_ticket_attachment_handler,
+    moderation_ticket_reply_handler,
+    moderation_ticket_status_handler,
 )
 from .map import map_command_handler, map_menu_handler, map_callback_handler
 from .leaderboard import leaderboard_handler, leaderboard_menu_handler, leaderboard_callback_handler
@@ -41,8 +43,9 @@ from .support import (
     support_callback_handler,
     support_open_handler,
     support_message_router,
-    support_reply_back_handler,
-    support_reply_close_handler,
+    support_start_reply_handler,
+    support_close_callback_handler,
+    support_attachment_handler,
     moderator_message_router,
 )
 from .menu import main_menu_callback_handler
@@ -81,6 +84,8 @@ def get_all_handlers():
         moderation_close_ticket_handler,
         moderation_delete_back_handler,
         moderation_ticket_attachment_handler,
+        moderation_ticket_reply_handler,
+        moderation_ticket_status_handler,
         faq_handler,
         faq_add_handler,
         faq_callback_handler,
@@ -93,8 +98,9 @@ def get_all_handlers():
         support_handler,
         support_callback_handler,
         support_open_handler,
-        support_reply_back_handler,
-        support_reply_close_handler,
+        support_start_reply_handler,
+        support_close_callback_handler,
+        support_attachment_handler,
         support_message_router,
         moderator_message_router,
         main_menu_callback_handler,

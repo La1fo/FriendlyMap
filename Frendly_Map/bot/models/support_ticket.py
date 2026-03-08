@@ -40,3 +40,14 @@ class SupportMessage(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     ticket = relationship("SupportTicket", back_populates="messages")
+
+
+SUPPORT_STATUS_NEW = "new"
+SUPPORT_STATUS_IN_PROGRESS = "in_progress"
+SUPPORT_STATUS_WAITING_USER = "waiting_user"
+SUPPORT_STATUS_CLOSED = "closed"
+SUPPORT_ACTIVE_STATUSES = (
+    SUPPORT_STATUS_NEW,
+    SUPPORT_STATUS_IN_PROGRESS,
+    SUPPORT_STATUS_WAITING_USER,
+)
