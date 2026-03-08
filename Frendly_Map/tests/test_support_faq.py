@@ -10,7 +10,7 @@ from bot.models.base import Base
 from bot.models.faq_entry import FaqEntry
 from bot.models.support_session import SupportSession
 from bot.models.support_ticket import SupportTicket
-from bot.services.support_state import get_active_ticket_id, has_unread_moderation_tickets, set_active_ticket_id
+from bot.services.support_state import get_active_ticket_id, get_session_mode, has_unread_moderation_tickets, set_active_ticket_id, set_session_mode
 
 
 class SupportFaqTests(unittest.TestCase):
@@ -37,6 +37,16 @@ class SupportFaqTests(unittest.TestCase):
 
         set_active_ticket_id(db, 42, "moderator", None)
         self.assertIsNone(get_active_ticket_id(db, 42, "moderator"))
+        db.close()
+
+
+    def test_support_session_mode_roundtrip(self):
+        db = self.Session()
+        self.assertEqual(get_session_mode(db, 99, "user"), "idle")
+        set_session_mode(db, 99, "user", "reply_text")
+        self.assertEqual(get_session_mode(db, 99, "user"), "reply_text")
+        set_active_ticket_id(db, 99, "user", None)
+        self.assertEqual(get_session_mode(db, 99, "user"), "idle")
         db.close()
 
     def test_faq_render_escapes_html(self):

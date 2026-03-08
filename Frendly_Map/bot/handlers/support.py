@@ -24,11 +24,17 @@ from bot.services.support_state import (
 from bot.utils.common import is_admin
 
 
-def _support_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🟢 Открыть/продолжить тикет", callback_data="support_open")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")],
-    ])
+def _support_menu_keyboard(active_ticket_id: int | None = None) -> InlineKeyboardMarkup:
+    rows = []
+    if active_ticket_id:
+        rows.append([InlineKeyboardButton(f"💬 Активный тикет #{active_ticket_id}", callback_data=f"support_ticket_{active_ticket_id}")])
+    else:
+        rows.append([InlineKeyboardButton("🟢 Создать тикет", callback_data="support_open")])
+
+    rows.append([InlineKeyboardButton("📦 Архив тикетов", callback_data="support_archive")])
+    rows.append([InlineKeyboardButton("❓ FAQ", callback_data="faq")])
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_back")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _status_text(status: str) -> str:
@@ -97,7 +103,9 @@ async def _edit_support_menu_message(
 
 def _user_ticket_keyboard(ticket: SupportTicket, messages: list[dict[str, Any]]) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    rows.append([InlineKeyboardButton("✍️ Ответить", callback_data=f"support_reply_{ticket.id}")])
+    rows.append([InlineKeyboardButton("✍️ Ответить текстом", callback_data=f"support_reply_text_{ticket.id}")])
+    rows.append([InlineKeyboardButton("🖼 Отправить фото", callback_data=f"support_reply_photo_{ticket.id}")])
+    rows.append([InlineKeyboardButton("📄 Отправить документ", callback_data=f"support_reply_document_{ticket.id}")])
 
     attachments = [m for m in messages if m["message_type"] in {"photo", "document"} and m.get("file_id")]
     for msg in attachments[-3:]:
@@ -118,7 +126,7 @@ async def _render_user_ticket_screen(
     with get_db_context() as db:
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.user_id == user_id).first()
         if not ticket:
-            await _edit_support_menu_message(context, user_id, "⚠️ Тикет не найден.", reply_markup=_support_menu_keyboard())
+            await _edit_support_menu_message(context, user_id, "⚠️ Тикет не найден.", reply_markup=_support_menu_keyboard(None))
             return
 
         msg_rows = (
@@ -182,6 +190,49 @@ async def support_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def support_open_ticket_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    ticket_id = int(query.data.split("_")[-1])
+
+    with get_db_context() as db:
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.user_id == update.effective_user.id).first()
+        if not ticket:
+            await query.answer("Тикет не найден", show_alert=True)
+            return
+        set_active_ticket_id(db, update.effective_user.id, "user", ticket_id if ticket.status != SUPPORT_STATUS_CLOSED else None)
+
+    await _render_user_ticket_screen(context, update.effective_user.id, ticket_id)
+
+
+async def support_archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+
+    with get_db_context() as db:
+        tickets = (
+            db.query(SupportTicket)
+            .filter(SupportTicket.user_id == user_id, SupportTicket.status == SUPPORT_STATUS_CLOSED)
+            .order_by(SupportTicket.closed_at.desc())
+            .limit(20)
+            .all()
+        )
+
+    if not tickets:
+        await _edit_support_menu_message(
+            context,
+            user_id,
+            "📦 Архив пуст.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="support")]]),
+        )
+        return
+
+    rows = [[InlineKeyboardButton(f"#{t.id} · {t.subject or 'без названия'}", callback_data=f"support_ticket_{t.id}")] for t in tickets]
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data="support")])
+    await _edit_support_menu_message(context, user_id, "📦 Архив тикетов", reply_markup=InlineKeyboardMarkup(rows))
+
+
 async def open_support_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -225,18 +276,27 @@ async def open_support_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def support_start_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    ticket_id = int(query.data.split("_")[-1])
-    user_id = update.effective_user.id
 
+    payload = query.data.replace("support_reply_", "")
+    action, ticket_id_raw = payload.rsplit("_", 1)
+    ticket_id = int(ticket_id_raw)
+    mode = f"reply_{action}"
+
+    user_id = update.effective_user.id
     with get_db_context() as db:
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.user_id == user_id).first()
         if not ticket or ticket.status == SUPPORT_STATUS_CLOSED:
             await query.answer("Тикет недоступен для ответа.", show_alert=True)
             return
         set_active_ticket_id(db, user_id, "user", ticket.id)
-        set_session_mode(db, user_id, "user", "reply")
+        set_session_mode(db, user_id, "user", mode)
 
-    await query.answer("Отправь одно сообщение, фото или документ в ответ.")
+    hints = {
+        "reply_text": "Отправь текстовое сообщение для тикета.",
+        "reply_photo": "Отправь фото (можно с подписью) для тикета.",
+        "reply_document": "Отправь документ (можно с подписью) для тикета.",
+    }
+    await query.answer(hints.get(mode, "Отправь сообщение для тикета."))
 
 
 async def support_close_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -254,7 +314,7 @@ async def support_close_ticket(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.answer("Тикет уже закрыт.", show_alert=True)
             set_active_ticket_id(db, user_id, "user", None)
             set_session_mode(db, user_id, "user", "idle")
-            await _edit_support_menu_message(context, user_id, "✅ Тикет закрыт.", reply_markup=_support_menu_keyboard())
+            await _edit_support_menu_message(context, user_id, "✅ Тикет закрыт.", reply_markup=_support_menu_keyboard(None))
             return
 
         ticket.status = SUPPORT_STATUS_CLOSED
@@ -267,7 +327,7 @@ async def support_close_ticket(update: Update, context: ContextTypes.DEFAULT_TYP
         set_active_ticket_id(db, user_id, "user", None)
         set_session_mode(db, user_id, "user", "idle")
 
-    await _edit_support_menu_message(context, user_id, "✅ Тикет закрыт. Он доступен в архиве профиля.", reply_markup=_support_menu_keyboard())
+    await _edit_support_menu_message(context, user_id, "✅ Тикет закрыт. Он доступен в архиве профиля.", reply_markup=_support_menu_keyboard(None))
 
 
 async def support_ticket_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -321,7 +381,15 @@ async def support_message_handler(update: Update, context: ContextTypes.DEFAULT_
             db.commit()
             set_session_mode(db, user_id, "user", "idle")
             render_ticket_id = ticket.id
-        elif mode == "reply":
+        elif mode in {"reply_text", "reply_photo", "reply_document"}:
+            expected = {
+                "reply_text": "text",
+                "reply_photo": "photo",
+                "reply_document": "document",
+            }[mode]
+            if payload["message_type"] != expected:
+                return
+
             msg = SupportMessage(
                 ticket_id=ticket.id,
                 sender_id=user_id,
@@ -379,7 +447,7 @@ async def moderator_message_handler(update: Update, context: ContextTypes.DEFAUL
     with get_db_context() as db:
         ticket_id = get_active_ticket_id(db, moderator_id, "moderator")
         mode = get_session_mode(db, moderator_id, "moderator")
-        if not ticket_id or mode != "reply":
+        if not ticket_id or mode not in {"reply_text", "reply_photo", "reply_document"}:
             return
 
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
@@ -417,7 +485,9 @@ async def moderator_message_handler(update: Update, context: ContextTypes.DEFAUL
 support_handler = CommandHandler("support", support_menu)
 support_callback_handler = CallbackQueryHandler(support_menu, pattern="^support$")
 support_open_handler = CallbackQueryHandler(open_support_ticket, pattern="^support_open$")
-support_start_reply_handler = CallbackQueryHandler(support_start_reply, pattern=r"^support_reply_\d+$")
+support_open_ticket_handler = CallbackQueryHandler(support_open_ticket_card, pattern=r"^support_ticket_\d+$")
+support_archive_handler = CallbackQueryHandler(support_archive, pattern="^support_archive$")
+support_start_reply_handler = CallbackQueryHandler(support_start_reply, pattern=r"^support_reply_(text|photo|document)_\d+$")
 support_close_callback_handler = CallbackQueryHandler(support_close_ticket, pattern=r"^support_close_\d+$")
 support_attachment_handler = CallbackQueryHandler(support_ticket_attachment, pattern=r"^support_attach_\d+$")
 
