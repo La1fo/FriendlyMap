@@ -1,98 +1,151 @@
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
-    MessageHandler,
     CommandHandler,
-    ConversationHandler,
     ContextTypes,
+    ConversationHandler,
+    MessageHandler,
     filters,
 )
+
 from bot.database import get_db_context
 from bot.keyboards.main_menu import get_main_menu
-from bot.services.location_service import LocationService
 from bot.services.achievements_manager import AchievementsManager
+from bot.services.location_service import LocationService
 from bot.utils.users import get_or_create_user
 
 ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_PHOTO, CONFIRM = range(5)
 
-CANCEL_TEXT = "❌ Отменить"
-SKIP_PHOTO_TEXT = "⏭ Пропустить"
-CONFIRM_TEXT = "✅ Подтвердить"
+CB_CANCEL = "addloc_cancel"
+CB_SKIP_DESC = "addloc_skip_desc"
+CB_SKIP_PHOTO = "addloc_skip_photo"
+CB_CONFIRM = "addloc_confirm"
 
 
-def _cancel_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup([[CANCEL_TEXT]], resize_keyboard=True)
+def _clear_add_location_data(context: ContextTypes.DEFAULT_TYPE) -> None:
+    for key in ("loc_name", "loc_description", "latitude", "longitude", "photos"):
+        context.user_data.pop(key, None)
 
 
-def _photo_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup([[SKIP_PHOTO_TEXT], [CANCEL_TEXT]], resize_keyboard=True)
+def _cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)]])
 
 
-def _confirm_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup([[CONFIRM_TEXT], [CANCEL_TEXT]], resize_keyboard=True)
+def _skip_description_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⏭ Пропустить описание", callback_data=CB_SKIP_DESC)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+
+
+def _photo_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⏭ Пропустить фото", callback_data=CB_SKIP_PHOTO)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+
+
+def _confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ Подтвердить", callback_data=CB_CONFIRM)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     unread = bool(context.bot_data.get("mod_unread_tickets"))
     menu_id = context.user_data.get("main_menu_message_id")
+    chat_id = update.effective_user.id
+
     if menu_id:
-        await context.bot.edit_message_text(
-            "Главное меню:",
-            chat_id=update.effective_user.id,
-            message_id=menu_id,
-            reply_markup=get_main_menu(update.effective_user.id, unread_moderation=unread)
-        )
-    else:
-        sent = await update.message.reply_text(
-            "Главное меню:",
-            reply_markup=get_main_menu(update.effective_user.id, unread_moderation=unread)
-        )
-        context.user_data["main_menu_message_id"] = sent.message_id
+        try:
+            await context.bot.edit_message_text(
+                "Главное меню:",
+                chat_id=chat_id,
+                message_id=menu_id,
+                reply_markup=get_main_menu(chat_id, unread_moderation=unread),
+            )
+            return
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+
+    sent = await context.bot.send_message(
+        chat_id=chat_id,
+        text="Главное меню:",
+        reply_markup=get_main_menu(chat_id, unread_moderation=unread),
+    )
+    context.user_data["main_menu_message_id"] = sent.message_id
+
+
+async def _send_or_edit_prompt(
+    update: Update,
+    text: str,
+    reply_markup: InlineKeyboardMarkup,
+    *,
+    edit_on_callback: bool = False,
+):
+    if update.callback_query and edit_on_callback:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+        return
+
+    source_message = update.callback_query.message if update.callback_query else update.message
+    await source_message.reply_text(text, reply_markup=reply_markup)
+
 
 async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _clear_add_location_data(context)
     if update.callback_query:
         await update.callback_query.answer()
-        chat = update.callback_query.message
-    else:
-        chat = update.message
-
-    await chat.reply_text("📍 Введи название локации:", reply_markup=_cancel_keyboard())
+    await _send_or_edit_prompt(
+        update,
+        "📍 Введи название локации:",
+        _cancel_keyboard(),
+        edit_on_callback=True,
+    )
     return ASK_NAME
 
-async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == CANCEL_TEXT:
-        return await cancel(update, context)
 
+async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["loc_name"] = update.message.text.strip()
     await update.message.reply_text(
-        "✏️ Напиши краткое описание (или - для пропуска):",
-        reply_markup=_cancel_keyboard()
+        "✏️ Напиши краткое описание:",
+        reply_markup=_skip_description_keyboard(),
     )
     return ASK_DESCRIPTION
 
+
 async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == CANCEL_TEXT:
-        return await cancel(update, context)
-
-    desc = update.message.text.strip()
-    context.user_data["loc_description"] = None if desc == "-" else desc
-
-    kb = ReplyKeyboardMarkup(
-        [[KeyboardButton("📡 Отправить геопозицию", request_location=True)], [CANCEL_TEXT]],
-        resize_keyboard=True
-    )
+    context.user_data["loc_description"] = update.message.text.strip()
     await update.message.reply_text(
-        "📌 Отправь локацию через кнопку ниже:",
-        reply_markup=kb
+        "📌 Отправь точку на карте через скрепку: Геопозиция → Выбрать место на карте.",
+        reply_markup=_cancel_keyboard(),
     )
     return ASK_LOCATION
 
-async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == CANCEL_TEXT:
-        return await cancel(update, context)
 
+async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["loc_description"] = None
+    await _send_or_edit_prompt(
+        update,
+        "📌 Отправь точку на карте через скрепку: Геопозиция → Выбрать место на карте.",
+        _cancel_keyboard(),
+        edit_on_callback=True,
+    )
+    return ASK_LOCATION
+
+
+async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.location:
-        await update.message.reply_text("⚠️ Это не похоже на геопозицию, попробуй еще раз")
+        await update.message.reply_text("⚠️ Нужна геопозиция. Выбери точку на карте и отправь её.")
         return ASK_LOCATION
 
     loc = update.message.location
@@ -100,49 +153,44 @@ async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["longitude"] = loc.longitude
 
     await update.message.reply_text(
-        "📷 Отправь фото места или пропусти этот шаг:",
-        reply_markup=_photo_keyboard()
+        "📷 Отправь фото места (можно несколько) или пропусти шаг:",
+        reply_markup=_photo_keyboard(),
     )
     return ASK_PHOTO
 
-async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text in {SKIP_PHOTO_TEXT, CANCEL_TEXT}:
-        if update.message.text == CANCEL_TEXT:
-            return await cancel(update, context)
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
-        return await confirm(update, context)
 
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        context.user_data.setdefault("photos", []).append(file_id)
-        await update.message.reply_text("Фото добавлено 📸 (ещё или пропусти шаг)")
+async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.photo:
+        await update.message.reply_text("Отправь фото или нажми «Пропустить фото».")
         return ASK_PHOTO
 
-    await update.message.reply_text("Отправь фото или нажми «Пропустить»")
+    file_id = update.message.photo[-1].file_id
+    context.user_data.setdefault("photos", []).append(file_id)
+    await update.message.reply_text("Фото добавлено 📸 Можно отправить ещё или пропустить.", reply_markup=_photo_keyboard())
     return ASK_PHOTO
+
+
+async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await confirm(update, context)
+
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     d = context.user_data
-
     msg = (
-        f"🧾 **Проверка данных:**\n"
+        "🧾 Проверь данные:\n"
         f"🏷 Название: {d['loc_name']}\n"
         f"✏️ Описание: {d.get('loc_description') or '—'}\n"
         f"🌍 Координаты: {d['latitude']}, {d['longitude']}\n"
         f"📷 Фото: {len(d.get('photos', []))}\n\n"
         "Подтвердить отправку?"
     )
-    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=_confirm_keyboard())
+    await _send_or_edit_prompt(update, msg, _confirm_keyboard(), edit_on_callback=True)
     return CONFIRM
 
-async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text == CANCEL_TEXT:
-        return await cancel(update, context)
 
-    if update.message.text != CONFIRM_TEXT:
-        await update.message.reply_text("Выбери «Подтвердить» или «Отменить».")
-        return CONFIRM
-    await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.answer()
 
     user = update.effective_user
     d = context.user_data
@@ -157,7 +205,7 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name=d["loc_name"],
             latitude=d["latitude"],
             longitude=d["longitude"],
-            description=d.get("loc_description")
+            description=d.get("loc_description"),
         )
 
         for i, file_id in enumerate(d.get("photos", [])):
@@ -167,26 +215,24 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if completed:
             completion_message = achievements.format_completion_message(completed)
 
-    await update.message.reply_text(
-        "🎉 Локация отправлена на модерацию!\n"
-        "После одобрения ты получишь баллы 💎",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    source_message = update.callback_query.message if update.callback_query else update.message
+    await source_message.reply_text("🎉 Локация отправлена на модерацию! После одобрения ты получишь баллы 💎")
     if completion_message:
-        await update.message.reply_text(completion_message)
+        await source_message.reply_text(completion_message)
+
+    _clear_add_location_data(context)
     await _show_main_menu(update, context)
-    context.user_data.clear()
     return ConversationHandler.END
 
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
-    except Exception:
-        pass
-    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
+    if update.callback_query:
+        await update.callback_query.answer("Добавление отменено")
+
+    _clear_add_location_data(context)
     await _show_main_menu(update, context)
-    context.user_data.clear()
     return ConversationHandler.END
+
 
 add_location_handler = ConversationHandler(
     entry_points=[
@@ -196,21 +242,21 @@ add_location_handler = ConversationHandler(
     ],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_description)],
-        ASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords)],
-        ASK_LOCATION: [
-            MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
-            MessageHandler(filters.LOCATION, get_coords),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, get_coords),
+        ASK_DESCRIPTION: [
+            CallbackQueryHandler(skip_description, pattern=f"^{CB_SKIP_DESC}$"),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
         ],
+        ASK_LOCATION: [MessageHandler(filters.LOCATION, get_coords)],
         ASK_PHOTO: [
+            CallbackQueryHandler(skip_photo, pattern=f"^{CB_SKIP_PHOTO}$"),
             MessageHandler(filters.PHOTO, collect_photo),
             MessageHandler(filters.TEXT & ~filters.COMMAND, collect_photo),
         ],
-        CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, save)],
+        CONFIRM: [CallbackQueryHandler(save, pattern=f"^{CB_CONFIRM}$")],
     },
     fallbacks=[
         CommandHandler("cancel", cancel),
-        MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
+        CallbackQueryHandler(cancel, pattern=f"^{CB_CANCEL}$"),
     ],
     allow_reentry=True,
 )
