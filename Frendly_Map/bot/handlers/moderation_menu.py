@@ -635,11 +635,8 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔙 Назад к тикетам", callback_data="mod_tickets")]
         ])
     )
-    await query.message.reply_text(
-        "Выберите действие:",
-        reply_markup=_ticket_actions_keyboard()
-    )
-    return ConversationHandler.END
+    await query.message.reply_text("⁠", reply_markup=_ticket_actions_keyboard())
+    return TICKETS_SELECT
 
 
 async def close_ticket_by_moderator(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -675,12 +672,13 @@ async def moderation_ticket_back(update: Update, context: ContextTypes.DEFAULT_T
     if not context.user_data.get("moderation_ticket_view"):
         return
     context.user_data.pop("moderation_ticket_view", None)
-    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("⁠", reply_markup=ReplyKeyboardRemove())
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:
         pass
-    await _render_tickets_menu(update, context)
+    status = context.user_data.get("tickets_status", "open")
+    await _render_tickets_list(update, context, status)
 
 
 async def moderation_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -707,12 +705,12 @@ async def moderation_ticket_close(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:
         pass
-    await update.message.reply_text("✅ Тикет закрыт и перемещен в архив.")
     await context.bot.send_message(
         chat_id=user_id,
         text=f"✅ Ваш тикет #{ticket_id} закрыт модератором и перемещен в архив.",
     )
-    await _render_tickets_menu(update, context)
+    context.user_data["tickets_status"] = "open"
+    await _render_tickets_list(update, context, "open")
 
 
 moderation_menu_handler = CommandHandler("moderation", moderation_menu)
