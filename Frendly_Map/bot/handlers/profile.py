@@ -113,9 +113,15 @@ def _format_ticket_history(messages: list[SupportMessage]) -> str:
     for msg in messages:
         who = "👤" if msg.sender_role == "user" else "👮"
         timestamp = msg.created_at.strftime("%d.%m %H:%M") if msg.created_at else ""
-        lines.append(f"{who} {timestamp}\n{msg.message}")
+        if msg.message_type == "photo":
+            body = f"[Фото] {msg.message or ''}".strip()
+        elif msg.message_type == "document":
+            filename = f" ({msg.file_name})" if msg.file_name else ""
+            body = f"[Документ{filename}] {msg.message or ''}".strip()
+        else:
+            body = msg.message
+        lines.append(f"{who} {timestamp}\n{body}")
     return "\n\n".join(lines)
-
 
 
 
@@ -207,6 +213,8 @@ async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE
             .order_by(SupportMessage.created_at.asc())
             .all()
         )
+        ticket.unread_for_user = False
+        db.commit()
 
     context.user_data["support_ticket_id"] = ticket_id
     context.user_data["support_chat_active"] = ticket.status == "open"

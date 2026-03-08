@@ -15,6 +15,7 @@ from bot.database import get_db_context
 from bot.models.location import Location
 from bot.models.photo import Photo
 from bot.models.support_ticket import SupportMessage, SupportTicket
+from bot.services.support_state import has_unread_moderation_tickets
 from bot.models.user import User
 from bot.utils.common import is_admin
 
@@ -43,12 +44,21 @@ def _moderation_keyboard(unread_tickets: bool) -> InlineKeyboardMarkup:
 def _format_ticket_history(messages: list[SupportMessage]) -> str:
     if not messages:
         return "Сообщений пока нет."
+
     lines = []
     for msg in messages:
         who = "👤" if msg.sender_role == "user" else "👮"
         timestamp = msg.created_at.strftime("%d.%m %H:%M") if msg.created_at else ""
-        lines.append(f"{who} {timestamp}\n{msg.message}")
+        if msg.message_type == "photo":
+            body = f"[Фото] {msg.message or ''}".strip()
+        elif msg.message_type == "document":
+            filename = f" ({msg.file_name})" if msg.file_name else ""
+            body = f"[Документ{filename}] {msg.message or ''}".strip()
+        else:
+            body = msg.message
+        lines.append(f"{who} {timestamp}\n{body}")
     return "\n\n".join(lines)
+
 
 
 def _ticket_actions_keyboard() -> ReplyKeyboardMarkup:
@@ -155,11 +165,10 @@ async def _render_tickets_list(update: Update, context: ContextTypes.DEFAULT_TYP
         await _render_tickets_menu(update, context)
         return
 
-    unread = context.bot_data.get("mod_unread_tickets", set())
     keyboard = []
     for ticket, user in results:
         label = f"#{ticket.id} · {user.username or user.first_name or user.id}"
-        if isinstance(unread, set) and ticket.id in unread:
+        if ticket.unread_for_moderator:
             label += " 🔔"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{ticket.id}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_tickets")])
@@ -180,7 +189,8 @@ async def _render_tickets_list(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def _show_moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     menu_message_id = context.user_data.get("moderation_menu_message_id")
-    unread_tickets = bool(context.bot_data.get("mod_unread_tickets"))
+    with get_db_context() as db:
+        unread_tickets = has_unread_moderation_tickets(db)
     if menu_message_id:
         await context.bot.edit_message_text(
             "⚙️ Панель модерации:",
@@ -582,11 +592,10 @@ async def tickets_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Тикеты не найдены. Попробуйте снова:")
         return TICKETS_SEARCH
 
-    unread = context.bot_data.get("mod_unread_tickets", set())
     keyboard = []
     for ticket, user in results:
         label = f"#{ticket.id} · {user.username or user.first_name or user.id}"
-        if isinstance(unread, set) and ticket.id in unread:
+        if ticket.unread_for_moderator:
             label += " 🔔"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{ticket.id}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_tickets")])
@@ -609,10 +618,6 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticket_id = int(query.data.split("_")[-1])
     context.user_data["moderation_ticket_id"] = ticket_id
     context.user_data["moderation_ticket_view"] = True
-    unread = context.bot_data.get("mod_unread_tickets")
-    if isinstance(unread, set) and ticket_id in unread:
-        unread.discard(ticket_id)
-
     with get_db_context() as db:
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
         user = db.query(User).filter(User.id == ticket.user_id).first() if ticket else None
@@ -622,6 +627,9 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
             .order_by(SupportMessage.created_at.asc())
             .all()
         ) if ticket else []
+        if ticket:
+            ticket.unread_for_moderator = False
+            db.commit()
 
     if not ticket:
         await query.message.reply_text("⚠️ Тикет не найден.")

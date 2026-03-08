@@ -11,6 +11,7 @@ from telegram.ext import (
 
 from bot.database import get_db_context
 from bot.keyboards.main_menu import get_main_menu
+from bot.services.support_state import get_main_menu_unread_flag
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.location_service import LocationService
 from bot.utils.users import get_or_create_user
@@ -113,9 +114,10 @@ async def _render_flow_message(
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    unread = bool(context.bot_data.get("mod_unread_tickets"))
-    menu_id = context.user_data.get("main_menu_message_id")
     chat_id = update.effective_user.id
+    with get_db_context() as db:
+        unread = get_main_menu_unread_flag(db, chat_id)
+    menu_id = context.user_data.get("main_menu_message_id")
     if menu_id:
         try:
             await context.bot.edit_message_text(

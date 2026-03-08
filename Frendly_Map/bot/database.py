@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 import logging
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from bot.config import settings
@@ -138,6 +138,31 @@ def _migrate_postgres_ids_to_bigint() -> None:
         )
 
 
+def _ensure_support_columns() -> None:
+    table_columns = {
+        "support_tickets": {
+            "awaiting_subject": 'BOOLEAN NOT NULL DEFAULT TRUE',
+            "unread_for_moderator": 'BOOLEAN NOT NULL DEFAULT TRUE',
+            "unread_for_user": 'BOOLEAN NOT NULL DEFAULT FALSE',
+        },
+        "support_messages": {
+            "message_type": "VARCHAR NOT NULL DEFAULT 'text'",
+            "file_id": "VARCHAR",
+            "file_name": "VARCHAR",
+            "mime_type": "VARCHAR",
+        },
+    }
+
+    with engine.begin() as conn:
+        for table_name, columns in table_columns.items():
+            existing = {col["name"] for col in inspect(conn).get_columns(table_name)}
+            for column_name, column_def in columns.items():
+                if column_name in existing:
+                    continue
+                conn.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_def}'))
+
+
+
 def init_db():
     from bot.models.user import User  # noqa: F401
     from bot.models.location import Location  # noqa: F401
@@ -152,3 +177,4 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
     _migrate_postgres_ids_to_bigint()
+    _ensure_support_columns()
