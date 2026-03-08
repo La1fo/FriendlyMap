@@ -12,7 +12,6 @@ from telegram.ext import (
 )
 
 from bot.database import get_db_context
-from bot.services.moderation_service import send_pending_locations
 from bot.models.location import Location
 from bot.models.photo import Photo
 from bot.models.support_ticket import SupportMessage, SupportTicket
@@ -98,16 +97,21 @@ async def _render_points_users(update: Update, context: ContextTypes.DEFAULT_TYP
         keyboard.append([InlineKeyboardButton(label, callback_data=f"points_user_{user.id}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_points")])
     menu_message_id = context.user_data.get("moderation_menu_message_id")
+    header = "Выберите пользователя:"
+    flash = context.user_data.pop("points_flash", None)
+    if flash:
+        header = f"{flash}\n\nВыберите пользователя:"
+
     if menu_message_id:
         await context.bot.edit_message_text(
-            "Выберите пользователя:",
+            header,
             chat_id=update.effective_user.id,
             message_id=menu_message_id,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         sent = await update.message.reply_text(
-            "Выберите пользователя:",
+            header,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         context.user_data["moderation_menu_message_id"] = sent.message_id
@@ -212,9 +216,28 @@ async def moderation_locations(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     if not _ensure_admin(update):
-        await query.message.reply_text("⛔ Только для модераторов.")
+        await query.edit_message_text("⛔ Только для модераторов.")
         return
-    await send_pending_locations(query.message, update.effective_user.id)
+
+    with get_db_context() as db:
+        locations = db.query(Location).filter(Location.status == "pending").order_by(Location.created_at.asc()).limit(20).all()
+
+    if not locations:
+        await query.edit_message_text(
+            "📍 Модерация локаций\n\nСейчас нет локаций на модерацию.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="moderation")]]),
+        )
+        return
+
+    keyboard = [
+        [InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"loc_detail_{loc.id}")]
+        for loc in locations
+    ]
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="moderation")])
+    await query.edit_message_text(
+        "📍 Модерация локаций\nВыберите локацию:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def points_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -312,27 +335,32 @@ def _apply_points_change(db, data: dict, amount: int):
 async def points_apply(update: Update, context: ContextTypes.DEFAULT_TYPE, amount: int | None = None):
     data = context.user_data.get("points_data", {})
     if "user_id" not in data:
-        await update.message.reply_text("⚠️ Пользователь не выбран.")
         return ConversationHandler.END
 
     if amount is None:
         try:
             amount = int(update.message.text.strip())
         except ValueError:
-            await update.message.reply_text("Введите целое число:")
+            try:
+                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+            except Exception:
+                pass
+            menu_message_id = context.user_data.get("moderation_menu_message_id")
+            if menu_message_id:
+                await _safe_edit_menu_message(context, update.effective_user.id, menu_message_id, "Введите целое число:")
             return POINTS_CUSTOM
 
     with get_db_context() as db:
         new_value, label = _apply_points_change(db, data, amount)
 
     if new_value is None:
-        await update.message.reply_text("⚠️ Пользователь не найден.")
         return ConversationHandler.END
 
-    await update.message.reply_text(
-        f"✅ Готово. Новый баланс {label} баллов: {new_value}",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
+    context.user_data["points_flash"] = f"✅ Новый баланс {label} баллов: {new_value}"
     context.user_data.pop("points_data", None)
     await _render_points_users(update, context)
     return POINTS_SELECT_USER
@@ -351,13 +379,9 @@ async def points_amount_choice(update: Update, context: ContextTypes.DEFAULT_TYP
         new_value, label = _apply_points_change(db, data, amount)
 
     if new_value is None:
-        await query.message.reply_text("⚠️ Пользователь не найден.")
         return ConversationHandler.END
 
-    await query.message.reply_text(
-        f"✅ Готово. Новый баланс {label} баллов: {new_value}",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    context.user_data["points_flash"] = f"✅ Новый баланс {label} баллов: {new_value}"
     context.user_data.pop("points_data", None)
     await _render_points_users(update, context)
     return POINTS_SELECT_USER
@@ -379,12 +403,7 @@ async def delete_location_start(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     context.user_data["moderation_menu_message_id"] = query.message.message_id
-    context.user_data["delete_locations_active"] = True
-    await query.edit_message_text("Выберите локацию:", reply_markup=InlineKeyboardMarkup([]))
-    await update.effective_message.reply_text(
-        "Меню удаления локаций.",
-        reply_markup=_back_reply_keyboard()
-    )
+    context.user_data.pop("delete_locations_active", None)
     await render_delete_locations(update, context)
     return DEL_SELECT
 
@@ -393,11 +412,15 @@ async def render_delete_locations(update: Update, context: ContextTypes.DEFAULT_
     with get_db_context() as db:
         locations = db.query(Location).filter(Location.status != "deleted").limit(20).all()
 
+    flash = context.user_data.pop("delete_flash", None)
     if not locations:
         menu_message_id = context.user_data.get("moderation_menu_message_id")
         if menu_message_id:
+            text_value = "Локаций нет."
+            if flash:
+                text_value = f"{flash}\n\n{text_value}"
             await context.bot.edit_message_text(
-                "Локаций нет.",
+                text_value,
                 chat_id=update.effective_user.id,
                 message_id=menu_message_id,
                 reply_markup=InlineKeyboardMarkup([
@@ -412,9 +435,12 @@ async def render_delete_locations(update: Update, context: ContextTypes.DEFAULT_
     ]
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="moderation")])
     menu_message_id = context.user_data.get("moderation_menu_message_id")
+    text_value = "Выберите локацию:"
+    if flash:
+        text_value = f"{flash}\n\n{text_value}"
     if menu_message_id:
         await context.bot.edit_message_text(
-            "Выберите локацию:",
+            text_value,
             chat_id=update.effective_user.id,
             message_id=menu_message_id,
             reply_markup=InlineKeyboardMarkup(keyboard)
@@ -423,7 +449,7 @@ async def render_delete_locations(update: Update, context: ContextTypes.DEFAULT_
         target = update.message or (update.callback_query.message if update.callback_query else None)
         if target:
             sent = await target.reply_text(
-                "Выберите локацию:",
+                text_value,
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             context.user_data["moderation_menu_message_id"] = sent.message_id
@@ -493,7 +519,7 @@ async def delete_location_confirm(update: Update, context: ContextTypes.DEFAULT_
         db.commit()
 
     context.user_data.pop("delete_loc_id", None)
-    await query.edit_message_text("✅ Локация удалена.")
+    context.user_data["delete_flash"] = "✅ Локация удалена."
     await render_delete_locations(update, context)
 
 
