@@ -6,6 +6,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 
 from bot.database import get_db_context
 from bot.models.support_ticket import SupportMessage, SupportTicket
+from bot.services.support_state import get_active_ticket_id, set_active_ticket_id
 from bot.utils.common import is_admin
 
 SUPPORT_BACK_TEXT = "◀️ Назад"
@@ -19,13 +20,16 @@ def _support_menu_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def _support_chat_reply_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup([[SUPPORT_BACK_TEXT, SUPPORT_CLOSE_TEXT]], resize_keyboard=True)
+def _support_chat_reply_keyboard(ticket_open: bool = True) -> ReplyKeyboardMarkup:
+    if ticket_open:
+        return ReplyKeyboardMarkup([[SUPPORT_BACK_TEXT, SUPPORT_CLOSE_TEXT]], resize_keyboard=True)
+    return ReplyKeyboardMarkup([[SUPPORT_BACK_TEXT]], resize_keyboard=True)
 
 
 def _support_chat_text(ticket: SupportTicket) -> str:
     title = ticket.subject or "без названия"
-    return f"💬 Тикет #{ticket.id} · {title}\nНапиши сообщение в поддержку."
+    status = "открыт" if ticket.status == "open" else "закрыт"
+    return f"💬 Тикет #{ticket.id} · {title}\nСтатус: {status}\nНапиши сообщение в поддержку."
 
 
 async def _edit_support_menu_message(
@@ -51,8 +55,12 @@ async def _edit_support_menu_message(
     context.user_data["support_menu_message_id"] = sent.message_id
 
 
-async def _show_support_reply_keyboard(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
-    await context.bot.send_message(chat_id=user_id, text="\u2060", reply_markup=_support_chat_reply_keyboard())
+async def _show_support_reply_keyboard(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    ticket_open: bool,
+) -> None:
+    await context.bot.send_message(chat_id=user_id, text="\u2060", reply_markup=_support_chat_reply_keyboard(ticket_open))
 
 
 def _extract_support_payload(message: Message) -> dict | None:
@@ -94,10 +102,18 @@ async def _deliver_support_message_to_user(
 ) -> None:
     prefix = f"👮 Ответ модератора по тикету #{ticket_id}:"
     if payload["message_type"] == "photo" and payload["file_id"]:
-        await context.bot.send_photo(chat_id=user_id, photo=payload["file_id"], caption=f"{prefix}\n{payload['message']}")
+        await context.bot.send_photo(
+            chat_id=user_id,
+            photo=payload["file_id"],
+            caption=f"{prefix}\n{payload['message']}",
+        )
         return
     if payload["message_type"] == "document" and payload["file_id"]:
-        await context.bot.send_document(chat_id=user_id, document=payload["file_id"], caption=f"{prefix}\n{payload['message']}")
+        await context.bot.send_document(
+            chat_id=user_id,
+            document=payload["file_id"],
+            caption=f"{prefix}\n{payload['message']}",
+        )
         return
     await context.bot.send_message(chat_id=user_id, text=f"{prefix}\n{payload['message']}")
 
@@ -107,8 +123,6 @@ async def support_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.answer()
         context.user_data["support_menu_message_id"] = update.callback_query.message.message_id
 
-    context.user_data.pop("awaiting_support_subject", None)
-    context.user_data.pop("support_chat_active", None)
     await _edit_support_menu_message(
         context,
         update.effective_user.id,
@@ -141,22 +155,17 @@ async def open_support_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE
             db.commit()
             db.refresh(ticket)
 
+        set_active_ticket_id(db, user_id, "user", ticket.id)
+
         if ticket.awaiting_subject or not ticket.subject:
-            context.user_data["support_ticket_id"] = ticket.id
-            context.user_data["support_chat_active"] = False
-            context.user_data["awaiting_support_subject"] = True
             await _edit_support_menu_message(
                 context,
                 user_id,
                 f"🆘 Тикет #{ticket.id} открыт. Введи название тикета одним сообщением.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="support")]]),
             )
-            await _show_support_reply_keyboard(context, user_id)
+            await _show_support_reply_keyboard(context, user_id, True)
             return
-
-        context.user_data["support_ticket_id"] = ticket.id
-        context.user_data["support_chat_active"] = True
-        context.user_data["awaiting_support_subject"] = False
 
     await _edit_support_menu_message(
         context,
@@ -164,15 +173,15 @@ async def open_support_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE
         _support_chat_text(ticket),
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="support")]]),
     )
-    await _show_support_reply_keyboard(context, user_id)
+    await _show_support_reply_keyboard(context, user_id, ticket.status == "open")
 
 
 async def support_reply_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not (context.user_data.get("support_chat_active") or context.user_data.get("awaiting_support_subject")):
-        return
-
-    context.user_data.pop("support_chat_active", None)
-    context.user_data.pop("awaiting_support_subject", None)
+    with get_db_context() as db:
+        active_ticket_id = get_active_ticket_id(db, update.effective_user.id, "user")
+        if not active_ticket_id:
+            return
+        set_active_ticket_id(db, update.effective_user.id, "user", None)
 
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
@@ -184,12 +193,12 @@ async def support_reply_back(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def support_reply_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ticket_id = context.user_data.get("support_ticket_id")
-    if not ticket_id:
-        return
-
     with get_db_context() as db:
-        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
+        ticket_id = get_active_ticket_id(db, update.effective_user.id, "user")
+        if not ticket_id:
+            return
+
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.user_id == update.effective_user.id).first()
         if ticket and ticket.status == "open":
             ticket.status = "closed"
             ticket.closed_at = datetime.utcnow()
@@ -198,9 +207,7 @@ async def support_reply_close(update: Update, context: ContextTypes.DEFAULT_TYPE
             ticket.unread_for_user = False
             db.commit()
 
-    context.user_data.pop("support_chat_active", None)
-    context.user_data.pop("awaiting_support_subject", None)
-    context.user_data.pop("support_ticket_id", None)
+        set_active_ticket_id(db, update.effective_user.id, "user", None)
 
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
@@ -208,38 +215,6 @@ async def support_reply_close(update: Update, context: ContextTypes.DEFAULT_TYPE
         pass
 
     await context.bot.send_message(chat_id=update.effective_user.id, text="\u2060", reply_markup=ReplyKeyboardRemove())
-    await _edit_support_menu_message(
-        context,
-        update.effective_user.id,
-        "✅ Тикет закрыт. Он доступен в архиве профиля.",
-        reply_markup=_support_menu_keyboard(),
-    )
-
-
-async def close_support_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    ticket_id = int(query.data.split("_")[-1])
-
-    with get_db_context() as db:
-        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
-        if not ticket or ticket.status != "open":
-            await query.edit_message_text("⚠️ Тикет уже закрыт или не найден.")
-            return
-        if ticket.user_id != update.effective_user.id and not is_admin(update.effective_user.id):
-            await query.edit_message_text("⛔ Нет доступа.")
-            return
-        ticket.status = "closed"
-        ticket.closed_at = datetime.utcnow()
-        ticket.closed_by = update.effective_user.id
-        ticket.unread_for_moderator = False
-        ticket.unread_for_user = False
-        db.commit()
-
-    context.user_data.pop("support_ticket_id", None)
-    context.user_data.pop("support_chat_active", None)
-    context.user_data.pop("awaiting_support_subject", None)
-
     await _edit_support_menu_message(
         context,
         update.effective_user.id,
@@ -257,26 +232,25 @@ async def support_message_handler(update: Update, context: ContextTypes.DEFAULT_
         return
 
     user_id = update.effective_user.id
-    ticket_id = context.user_data.get("support_ticket_id")
-    if not ticket_id:
-        return
 
     with get_db_context() as db:
-        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.user_id == user_id).first()
-        if not ticket or ticket.status != "open":
-            context.user_data.pop("support_ticket_id", None)
+        ticket_id = get_active_ticket_id(db, user_id, "user")
+        if not ticket_id:
             return
 
-        if context.user_data.get("awaiting_support_subject"):
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id, SupportTicket.user_id == user_id).first()
+        if not ticket or ticket.status != "open":
+            set_active_ticket_id(db, user_id, "user", None)
+            return
+
+        if ticket.awaiting_subject:
             if payload["message_type"] != "text":
                 return
             ticket.subject = payload["message"]
             ticket.awaiting_subject = False
             ticket.unread_for_moderator = True
             db.commit()
-            context.user_data["awaiting_support_subject"] = False
-            context.user_data["support_chat_active"] = True
-        elif context.user_data.get("support_chat_active"):
+        else:
             msg = SupportMessage(
                 ticket_id=ticket.id,
                 sender_id=user_id,
@@ -290,8 +264,6 @@ async def support_message_handler(update: Update, context: ContextTypes.DEFAULT_
             db.add(msg)
             ticket.unread_for_moderator = True
             db.commit()
-        else:
-            return
 
         subject = ticket.subject
 
@@ -316,19 +288,21 @@ async def moderator_message_handler(update: Update, context: ContextTypes.DEFAUL
     if not payload:
         return
 
-    ticket_id = context.user_data.get("moderation_ticket_id")
-    if not ticket_id:
-        return
+    moderator_id = update.effective_user.id
 
     with get_db_context() as db:
+        ticket_id = get_active_ticket_id(db, moderator_id, "moderator")
+        if not ticket_id:
+            return
+
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
         if not ticket or ticket.status != "open":
-            context.user_data.pop("moderation_ticket_id", None)
+            set_active_ticket_id(db, moderator_id, "moderator", None)
             return
 
         msg = SupportMessage(
             ticket_id=ticket.id,
-            sender_id=update.effective_user.id,
+            sender_id=moderator_id,
             sender_role="moderator",
             message_type=payload["message_type"],
             message=payload["message"],
@@ -353,9 +327,11 @@ async def moderator_message_handler(update: Update, context: ContextTypes.DEFAUL
 support_handler = CommandHandler("support", support_menu)
 support_callback_handler = CallbackQueryHandler(support_menu, pattern="^support$")
 support_open_handler = CallbackQueryHandler(open_support_ticket, pattern="^support_open$")
+
 support_message_router = MessageHandler(
     (filters.TEXT | filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND,
     support_message_handler,
+    block=False,
 )
 
 support_reply_back_handler = MessageHandler(filters.Regex(f"^{SUPPORT_BACK_TEXT}$"), support_reply_back)
@@ -364,4 +340,5 @@ support_reply_close_handler = MessageHandler(filters.Regex(f"^{SUPPORT_CLOSE_TEX
 moderator_message_router = MessageHandler(
     (filters.TEXT | filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND,
     moderator_message_handler,
+    block=False,
 )

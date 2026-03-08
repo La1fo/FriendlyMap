@@ -15,7 +15,7 @@ from bot.database import get_db_context
 from bot.models.location import Location
 from bot.models.photo import Photo
 from bot.models.support_ticket import SupportMessage, SupportTicket
-from bot.services.support_state import has_unread_moderation_tickets
+from bot.services.support_state import has_unread_moderation_tickets, set_active_ticket_id
 from bot.models.user import User
 from bot.utils.common import is_admin
 
@@ -58,6 +58,20 @@ def _format_ticket_history(messages: list[SupportMessage]) -> str:
             body = msg.message
         lines.append(f"{who} {timestamp}\n{body}")
     return "\n\n".join(lines)
+
+
+def _attachments_keyboard(messages: list[SupportMessage]) -> InlineKeyboardMarkup | None:
+    attachments = [m for m in messages if m.message_type in {"photo", "document"} and m.file_id]
+    if not attachments:
+        return None
+
+    attachments = attachments[-5:]
+    rows = []
+    for msg in attachments:
+        icon = "🖼" if msg.message_type == "photo" else "📄"
+        rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg.id}", callback_data=f"mod_attach_{msg.id}")])
+    rows.append([InlineKeyboardButton("🔙 Назад к тикетам", callback_data="mod_tickets")])
+    return InlineKeyboardMarkup(rows)
 
 
 
@@ -619,6 +633,7 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["moderation_ticket_id"] = ticket_id
     context.user_data["moderation_ticket_view"] = True
     with get_db_context() as db:
+        set_active_ticket_id(db, update.effective_user.id, "moderator", ticket_id)
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
         user = db.query(User).filter(User.id == ticket.user_id).first() if ticket else None
         messages = (
@@ -685,6 +700,8 @@ async def moderation_ticket_back(update: Update, context: ContextTypes.DEFAULT_T
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
     except Exception:
         pass
+    with get_db_context() as db:
+        set_active_ticket_id(db, update.effective_user.id, "moderator", None)
     status = context.user_data.get("tickets_status", "open")
     await _render_tickets_list(update, context, status)
 
@@ -717,8 +734,29 @@ async def moderation_ticket_close(update: Update, context: ContextTypes.DEFAULT_
         chat_id=user_id,
         text=f"✅ Ваш тикет #{ticket_id} закрыт модератором и перемещен в архив.",
     )
+    with get_db_context() as db:
+        set_active_ticket_id(db, update.effective_user.id, "moderator", None)
     context.user_data["tickets_status"] = "open"
     await _render_tickets_list(update, context, "open")
+
+
+async def moderation_ticket_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if not _ensure_admin(update):
+        return
+
+    msg_id = int(query.data.split("_")[-1])
+    with get_db_context() as db:
+        msg = db.query(SupportMessage).filter(SupportMessage.id == msg_id).first()
+    if not msg or not msg.file_id:
+        return
+
+    if msg.message_type == "photo":
+        await context.bot.send_photo(chat_id=update.effective_user.id, photo=msg.file_id, caption=msg.message)
+    elif msg.message_type == "document":
+        await context.bot.send_document(chat_id=update.effective_user.id, document=msg.file_id, caption=msg.message)
+
 
 
 moderation_menu_handler = CommandHandler("moderation", moderation_menu)
@@ -769,3 +807,4 @@ moderation_close_ticket_handler = CallbackQueryHandler(close_ticket_by_moderator
 moderation_ticket_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), moderation_ticket_back)
 moderation_ticket_close_handler = MessageHandler(filters.Regex("^✅ Закрыть тикет$"), moderation_ticket_close)
 moderation_delete_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), delete_locations_back)
+moderation_ticket_attachment_handler = CallbackQueryHandler(moderation_ticket_attachment, pattern=r"^mod_attach_\d+$")

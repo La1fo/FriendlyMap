@@ -18,6 +18,7 @@ from telegram.ext import (
 from bot.database import get_db_context
 from bot.models.support_ticket import SupportMessage, SupportTicket
 from bot.models.user import User
+from bot.services.support_state import get_active_ticket_id, set_active_ticket_id
 from bot.utils.rank import get_user_rank_display
 
 
@@ -28,11 +29,10 @@ def _profile_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def _ticket_actions_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        [["◀️ Назад", "✅ Закрыть тикет"]],
-        resize_keyboard=True
-    )
+def _ticket_actions_keyboard(ticket_open: bool) -> ReplyKeyboardMarkup:
+    if ticket_open:
+        return ReplyKeyboardMarkup([["◀️ Назад", "✅ Закрыть тикет"]], resize_keyboard=True)
+    return ReplyKeyboardMarkup([["◀️ Назад"]], resize_keyboard=True)
 
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,6 +125,19 @@ def _format_ticket_history(messages: list[SupportMessage]) -> str:
 
 
 
+
+
+def _ticket_attachments_keyboard(messages: list[SupportMessage]) -> InlineKeyboardMarkup | None:
+    attachments = [m for m in messages if m.message_type in {"photo", "document"} and m.file_id]
+    if not attachments:
+        return None
+    attachments = attachments[-5:]
+    rows = []
+    for msg in attachments:
+        icon = "🖼" if msg.message_type == "photo" else "📄"
+        rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg.id}", callback_data=f"profile_attach_{msg.id}")])
+    return InlineKeyboardMarkup(rows)
+
 async def _send_ticket_list_message(
     context: ContextTypes.DEFAULT_TYPE,
     user_id: int,
@@ -214,6 +227,8 @@ async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE
             .all()
         )
         ticket.unread_for_user = False
+        if ticket.status == "open":
+            set_active_ticket_id(db, update.effective_user.id, "user", ticket.id)
         db.commit()
 
     context.user_data["support_ticket_id"] = ticket_id
@@ -223,18 +238,24 @@ async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     history_text = _format_ticket_history(messages)
     title = f"💬 Тикет #{ticket_id}\nСтатус: {'открыт' if ticket.status == 'open' else 'закрыт'}\n\n"
-    await query.edit_message_text(title + history_text)
-    await query.message.reply_text("⁠", reply_markup=_ticket_actions_keyboard())
+    attachments_kb = _ticket_attachments_keyboard(messages)
+    await query.edit_message_text(title + history_text, reply_markup=attachments_kb)
+    await query.message.reply_text("⁠", reply_markup=_ticket_actions_keyboard(ticket.status == "open"))
 
 
 async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("profile_ticket_view"):
+    with get_db_context() as db:
+        active_ticket_id = get_active_ticket_id(db, update.effective_user.id, "user")
+
+    if not context.user_data.get("profile_ticket_view") and not active_ticket_id:
         return
 
     status = context.user_data.get("profile_ticket_status", "open")
     old_menu_message_id = context.user_data.get("profile_menu_message_id")
     context.user_data.pop("support_chat_active", None)
     context.user_data.pop("profile_ticket_view", None)
+    with get_db_context() as db:
+        set_active_ticket_id(db, update.effective_user.id, "user", None)
 
     try:
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
@@ -251,7 +272,10 @@ async def profile_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("profile_ticket_view"):
+    with get_db_context() as db:
+        active_ticket_id = get_active_ticket_id(db, update.effective_user.id, "user")
+
+    if not context.user_data.get("profile_ticket_view") and not active_ticket_id:
         return
 
     ticket_id = context.user_data.get("support_ticket_id")
@@ -271,6 +295,7 @@ async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYP
         ticket.status = "closed"
         ticket.closed_at = datetime.utcnow()
         ticket.closed_by = update.effective_user.id
+        set_active_ticket_id(db, update.effective_user.id, "user", None)
         db.commit()
 
     context.user_data["support_chat_active"] = False
@@ -294,6 +319,25 @@ async def profile_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 
+async def profile_ticket_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    msg_id = int(query.data.split("_")[-1])
+
+    with get_db_context() as db:
+        msg = db.query(SupportMessage).filter(SupportMessage.id == msg_id).first()
+        ticket = db.query(SupportTicket).filter(SupportTicket.id == msg.ticket_id).first() if msg else None
+
+    if not msg or not msg.file_id or not ticket or ticket.user_id != update.effective_user.id:
+        return
+
+    if msg.message_type == "photo":
+        await context.bot.send_photo(chat_id=update.effective_user.id, photo=msg.file_id, caption=msg.message)
+    elif msg.message_type == "document":
+        await context.bot.send_document(chat_id=update.effective_user.id, document=msg.file_id, caption=msg.message)
+
+
+
 profile_handler = CommandHandler("profile", profile)
 profile_menu_handler = MessageHandler(filters.Regex("^(👤 Профиль|profile)$"), profile)
 profile_callback_handler = CallbackQueryHandler(profile, pattern="^profile$")
@@ -305,3 +349,5 @@ profile_tickets_list_handler = CallbackQueryHandler(
 profile_ticket_chat_handler = CallbackQueryHandler(profile_ticket_chat, pattern="^profile_ticket_\\d+$")
 profile_ticket_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), profile_ticket_back)
 profile_ticket_close_handler = MessageHandler(filters.Regex("^✅ Закрыть тикет$"), profile_ticket_close)
+
+profile_ticket_attachment_handler = CallbackQueryHandler(profile_ticket_attachment, pattern="^profile_attach_\d+$")
