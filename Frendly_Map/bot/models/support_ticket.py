@@ -1,8 +1,18 @@
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from bot.models.base import Base
+
+SUPPORT_STATUS_NEW = "new"
+SUPPORT_STATUS_IN_PROGRESS = "in_progress"
+SUPPORT_STATUS_WAITING_USER = "waiting_user"
+SUPPORT_STATUS_CLOSED = "closed"
+SUPPORT_ACTIVE_STATUSES = (
+    SUPPORT_STATUS_NEW,
+    SUPPORT_STATUS_IN_PROGRESS,
+    SUPPORT_STATUS_WAITING_USER,
+)
 
 
 class SupportTicket(Base):
@@ -10,7 +20,7 @@ class SupportTicket(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
-    status = Column(String, default="open", nullable=False)
+    status = Column(String, default=SUPPORT_STATUS_NEW, nullable=False)
     subject = Column(String, nullable=True)
     awaiting_subject = Column(Boolean, default=True, nullable=False)
     unread_for_moderator = Column(Boolean, default=True, nullable=False)
@@ -20,9 +30,7 @@ class SupportTicket(Base):
     closed_by = Column(BigInteger, ForeignKey("users.id"), nullable=True)
     closed_reason = Column(Text, nullable=True)
 
-    messages = relationship(
-        "SupportMessage", back_populates="ticket", cascade="all, delete-orphan"
-    )
+    messages = relationship("SupportMessage", back_populates="ticket", cascade="all, delete-orphan")
 
 
 class SupportMessage(Base):
@@ -40,14 +48,3 @@ class SupportMessage(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     ticket = relationship("SupportTicket", back_populates="messages")
-
-
-SUPPORT_STATUS_NEW = "new"
-SUPPORT_STATUS_IN_PROGRESS = "in_progress"
-SUPPORT_STATUS_WAITING_USER = "waiting_user"
-SUPPORT_STATUS_CLOSED = "closed"
-SUPPORT_ACTIVE_STATUSES = (
-    SUPPORT_STATUS_NEW,
-    SUPPORT_STATUS_IN_PROGRESS,
-    SUPPORT_STATUS_WAITING_USER,
-)

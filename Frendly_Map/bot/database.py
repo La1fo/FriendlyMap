@@ -166,6 +166,17 @@ def _ensure_support_columns() -> None:
 
 
 
+
+
+def _normalize_support_statuses() -> None:
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("UPDATE support_tickets SET status = 'new' WHERE status = 'open'"))
+            conn.execute(text("UPDATE support_tickets SET status = 'closed' WHERE status = 'resolved'"))
+        except Exception:
+            logger.exception("Failed to normalize support ticket statuses")
+
+
 def init_db():
     from bot.models.user import User  # noqa: F401
     from bot.models.location import Location  # noqa: F401
@@ -182,3 +193,4 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_postgres_ids_to_bigint()
     _ensure_support_columns()
+    _normalize_support_statuses()

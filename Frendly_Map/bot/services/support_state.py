@@ -45,6 +45,32 @@ def get_active_ticket_id(db: Session, user_id: int, scope: str) -> int | None:
     return session.active_ticket_id
 
 
+def get_active_open_ticket_id(db: Session, user_id: int, scope: str) -> int | None:
+    active_ticket_id = get_active_ticket_id(db, user_id, scope)
+    if active_ticket_id is not None:
+        active_ticket = (
+            db.query(SupportTicket.id)
+            .filter(SupportTicket.id == active_ticket_id, SupportTicket.status.in_(SUPPORT_ACTIVE_STATUSES))
+            .first()
+        )
+        if active_ticket:
+            return active_ticket_id
+
+    if scope != "user":
+        return None
+
+    fallback = (
+        db.query(SupportTicket.id)
+        .filter(SupportTicket.user_id == user_id, SupportTicket.status.in_(SUPPORT_ACTIVE_STATUSES))
+        .order_by(SupportTicket.created_at.desc())
+        .first()
+    )
+    resolved_id = fallback[0] if fallback else None
+    if resolved_id != active_ticket_id:
+        set_active_ticket_id(db, user_id, scope, resolved_id)
+    return resolved_id
+
+
 def set_active_ticket_id(db: Session, user_id: int, scope: str, ticket_id: int | None) -> None:
     session = _get_or_create_session(db, user_id, scope)
     session.active_ticket_id = ticket_id

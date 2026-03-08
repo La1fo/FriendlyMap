@@ -16,6 +16,7 @@ from bot.models.support_ticket import (
     SupportTicket,
 )
 from bot.services.support_state import (
+    get_active_open_ticket_id,
     get_active_ticket_id,
     get_session_mode,
     set_active_ticket_id,
@@ -190,11 +191,15 @@ async def support_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.answer()
         context.user_data["support_menu_message_id"] = update.callback_query.message.message_id
 
+    user_id = update.effective_user.id
+    with get_db_context() as db:
+        active_ticket_id = get_active_open_ticket_id(db, user_id, "user")
+
     await _edit_support_menu_message(
         context,
-        update.effective_user.id,
+        user_id,
         "🆘 Поддержка\nОткрой тикет и веди диалог в карточке тикета.",
-        reply_markup=_support_menu_keyboard(),
+        reply_markup=_support_menu_keyboard(active_ticket_id),
     )
 
 

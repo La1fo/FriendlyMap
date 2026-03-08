@@ -10,7 +10,14 @@ from bot.models.base import Base
 from bot.models.faq_entry import FaqEntry
 from bot.models.support_session import SupportSession
 from bot.models.support_ticket import SupportTicket
-from bot.services.support_state import get_active_ticket_id, get_session_mode, has_unread_moderation_tickets, set_active_ticket_id, set_session_mode
+from bot.services.support_state import (
+    get_active_open_ticket_id,
+    get_active_ticket_id,
+    get_session_mode,
+    has_unread_moderation_tickets,
+    set_active_ticket_id,
+    set_session_mode,
+)
 
 
 class SupportFaqTests(unittest.TestCase):
@@ -18,6 +25,30 @@ class SupportFaqTests(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(bind=engine)
         self.Session = sessionmaker(bind=engine)
+
+
+    def test_support_ticket_default_status_is_new(self):
+        db = self.Session()
+        ticket = SupportTicket(user_id=1)
+        db.add(ticket)
+        db.flush()
+        self.assertEqual(ticket.status, "new")
+        db.close()
+
+    def test_get_active_open_ticket_id_repairs_stale_session(self):
+        db = self.Session()
+        closed_ticket = SupportTicket(user_id=1, status="closed", unread_for_moderator=False, awaiting_subject=False)
+        open_ticket = SupportTicket(user_id=1, status="new", unread_for_moderator=True, awaiting_subject=False)
+        db.add_all([closed_ticket, open_ticket])
+        db.commit()
+        db.refresh(closed_ticket)
+        db.refresh(open_ticket)
+
+        set_active_ticket_id(db, 1, "user", closed_ticket.id)
+        resolved = get_active_open_ticket_id(db, 1, "user")
+        self.assertEqual(resolved, open_ticket.id)
+        self.assertEqual(get_active_ticket_id(db, 1, "user"), open_ticket.id)
+        db.close()
 
     def test_support_session_persistence_primitives(self):
         db = self.Session()
