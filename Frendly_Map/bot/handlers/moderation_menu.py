@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.error import BadRequest
@@ -58,6 +59,42 @@ def _format_ticket_history(messages: list[SupportMessage]) -> str:
             body = msg.message
         lines.append(f"{who} {timestamp}\n{body}")
     return "\n\n".join(lines)
+
+
+def _serialize_support_message(msg: SupportMessage) -> dict[str, Any]:
+    return {
+        "id": msg.id,
+        "sender_role": msg.sender_role,
+        "created_at": msg.created_at,
+        "message_type": msg.message_type,
+        "message": msg.message,
+        "file_id": msg.file_id,
+        "file_name": msg.file_name,
+    }
+
+
+def _format_ticket_history_payload(messages: list[dict[str, Any]]) -> str:
+    if not messages:
+        return "Сообщений пока нет."
+
+    lines = []
+    for msg in messages:
+        who = "👤" if msg["sender_role"] == "user" else "👮"
+        created_at = msg.get("created_at")
+        timestamp = created_at.strftime("%d.%m %H:%M") if created_at else ""
+        if msg["message_type"] == "photo":
+            body = f"[Фото] {msg.get('message') or ''}".strip()
+        elif msg["message_type"] == "document":
+            filename = f" ({msg.get('file_name')})" if msg.get("file_name") else ""
+            body = f"[Документ{filename}] {msg.get('message') or ''}".strip()
+        else:
+            body = msg.get("message")
+        lines.append(f"{who} {timestamp}\n{body}")
+    return "\n\n".join(lines)
+
+
+def _build_user_label(username: str | None, first_name: str | None, user_id: int) -> str:
+    return username or first_name or str(user_id)
 
 
 def _attachments_keyboard(messages: list[SupportMessage]) -> InlineKeyboardMarkup | None:
@@ -626,30 +663,38 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_active_ticket_id(db, update.effective_user.id, "moderator", ticket_id)
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
         user = db.query(User).filter(User.id == ticket.user_id).first() if ticket else None
-        messages = (
+        message_rows = (
             db.query(SupportMessage)
             .filter(SupportMessage.ticket_id == ticket_id)
             .order_by(SupportMessage.created_at.asc())
             .all()
         ) if ticket else []
+
+        if not ticket:
+            await query.edit_message_text("⚠️ Тикет не найден.")
+            return ConversationHandler.END
+
+        user_label = _build_user_label(
+            user.username if user else None,
+            user.first_name if user else None,
+            ticket.user_id,
+        )
+        ticket_status = ticket.status
+        messages = [_serialize_support_message(msg) for msg in message_rows]
+
         if ticket:
             ticket.unread_for_moderator = False
             db.commit()
 
-    if not ticket:
-        await query.edit_message_text("⚠️ Тикет не найден.")
-        return ConversationHandler.END
-
-    user_label = user.username or user.first_name or ticket.user_id
-    history_text = _format_ticket_history(messages)
+    history_text = _format_ticket_history_payload(messages)
 
     rows = []
-    for msg in [m for m in messages if m.message_type in {"photo", "document"} and m.file_id][-5:]:
-        icon = "🖼" if msg.message_type == "photo" else "📄"
-        rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg.id}", callback_data=f"mod_attach_{msg.id}")])
+    for msg in [m for m in messages if m["message_type"] in {"photo", "document"} and m.get("file_id")][-5:]:
+        icon = "🖼" if msg["message_type"] == "photo" else "📄"
+        rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg['id']}", callback_data=f"mod_attach_{msg['id']}")])
 
-    if ticket.status == "open":
-        rows.append([InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"ticket_close_{status}_{ticket.id}")])
+    if ticket_status == "open":
+        rows.append([InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"ticket_close_{status}_{ticket_id}")])
 
     rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"tickets_{'active' if status == 'open' else 'archive'}")])
 

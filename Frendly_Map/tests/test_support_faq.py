@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from bot.handlers.faq import _render_faq_text
 from bot.handlers.profile import _format_ticket_history, _ticket_view_keyboard
+from bot.handlers.moderation_menu import _build_user_label, _format_ticket_history_payload
 from bot.models.base import Base
 from bot.models.faq_entry import FaqEntry
 from bot.models.support_session import SupportSession
@@ -66,6 +67,21 @@ class SupportFaqTests(unittest.TestCase):
         labels = [btn.text for row in kb.inline_keyboard for btn in row]
         self.assertIn("🖼 Вложение #1", labels)
         self.assertIn("📄 Вложение #2", labels)
+
+    def test_moderation_user_label_fallbacks(self):
+        self.assertEqual(_build_user_label("user1", "Name", 10), "user1")
+        self.assertEqual(_build_user_label(None, "Name", 10), "Name")
+        self.assertEqual(_build_user_label(None, None, 10), "10")
+
+    def test_moderation_ticket_history_payload_format(self):
+        history = _format_ticket_history_payload([
+            {"sender_role": "user", "created_at": None, "message_type": "text", "message": "Привет"},
+            {"sender_role": "moderator", "created_at": None, "message_type": "photo", "message": "Фото", "file_name": None},
+            {"sender_role": "moderator", "created_at": None, "message_type": "document", "message": "Файл", "file_name": "doc.pdf"},
+        ])
+        self.assertIn("Привет", history)
+        self.assertIn("[Фото] Фото", history)
+        self.assertIn("[Документ (doc.pdf)] Файл", history)
 
     def test_ticket_history_format_for_attachments(self):
         history = _format_ticket_history([
