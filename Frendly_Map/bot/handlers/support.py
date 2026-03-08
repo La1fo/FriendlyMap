@@ -101,19 +101,22 @@ async def _edit_support_menu_message(
     context.user_data["support_menu_message_id"] = sent.message_id
 
 
-def _user_ticket_keyboard(ticket: SupportTicket, messages: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+def _user_ticket_keyboard(ticket_data: dict[str, Any], messages: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    ticket_id = ticket_data["id"]
+    ticket_status = ticket_data["status"]
+
     rows: list[list[InlineKeyboardButton]] = []
-    rows.append([InlineKeyboardButton("✍️ Ответить текстом", callback_data=f"support_reply_text_{ticket.id}")])
-    rows.append([InlineKeyboardButton("🖼 Отправить фото", callback_data=f"support_reply_photo_{ticket.id}")])
-    rows.append([InlineKeyboardButton("📄 Отправить документ", callback_data=f"support_reply_document_{ticket.id}")])
+    rows.append([InlineKeyboardButton("✍️ Ответить текстом", callback_data=f"support_reply_text_{ticket_id}")])
+    rows.append([InlineKeyboardButton("🖼 Отправить фото", callback_data=f"support_reply_photo_{ticket_id}")])
+    rows.append([InlineKeyboardButton("📄 Отправить документ", callback_data=f"support_reply_document_{ticket_id}")])
 
     attachments = [m for m in messages if m["message_type"] in {"photo", "document"} and m.get("file_id")]
     for msg in attachments[-3:]:
         icon = "🖼" if msg["message_type"] == "photo" else "📄"
         rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg['id']}", callback_data=f"support_attach_{msg['id']}")])
 
-    if ticket.status != SUPPORT_STATUS_CLOSED:
-        rows.append([InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"support_close_{ticket.id}")])
+    if ticket_status != SUPPORT_STATUS_CLOSED:
+        rows.append([InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"support_close_{ticket_id}")])
     rows.append([InlineKeyboardButton("◀️ Назад", callback_data="support")])
     return InlineKeyboardMarkup(rows)
 
@@ -136,17 +139,22 @@ async def _render_user_ticket_screen(
             .all()
         )
         messages = [_serialize_support_message(msg) for msg in msg_rows]
+        ticket_data = {
+            "id": ticket.id,
+            "subject": ticket.subject,
+            "status": ticket.status,
+        }
 
         ticket.unread_for_user = False
         db.commit()
 
-    title = ticket.subject or "без названия"
+    title = ticket_data["subject"] or "без названия"
     text = (
-        f"💬 Тикет #{ticket.id} · {title}\n"
-        f"Статус: {_status_text(ticket.status)}\n\n"
+        f"💬 Тикет #{ticket_data['id']} · {title}\n"
+        f"Статус: {_status_text(ticket_data['status'])}\n\n"
         f"{_format_ticket_history(messages)}"
     )
-    await _edit_support_menu_message(context, user_id, text, reply_markup=_user_ticket_keyboard(ticket, messages))
+    await _edit_support_menu_message(context, user_id, text, reply_markup=_user_ticket_keyboard(ticket_data, messages))
 
 
 def _extract_support_payload(message: Message) -> dict | None:
@@ -258,19 +266,21 @@ async def open_support_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE
             db.refresh(ticket)
 
         set_active_ticket_id(db, user_id, "user", ticket.id)
+        render_ticket_id = ticket.id
+
         if ticket.awaiting_subject or not ticket.subject:
             set_session_mode(db, user_id, "user", "subject")
             await _edit_support_menu_message(
                 context,
                 user_id,
-                f"🆘 Тикет #{ticket.id} создан. Напиши тему тикета одним сообщением.",
+                f"🆘 Тикет #{render_ticket_id} создан. Напиши тему тикета одним сообщением.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="support")]]),
             )
             return
 
         set_session_mode(db, user_id, "user", "idle")
 
-    await _render_user_ticket_screen(context, user_id, ticket.id)
+    await _render_user_ticket_screen(context, user_id, render_ticket_id)
 
 
 async def support_start_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
