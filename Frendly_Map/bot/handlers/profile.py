@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
@@ -87,30 +88,44 @@ async def profile_tickets_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.edit_message_text("🎫 Тикеты", reply_markup=keyboard)
 
 
-def _format_ticket_history(messages: list[SupportMessage]) -> str:
+def _serialize_support_message(msg: SupportMessage) -> dict[str, Any]:
+    return {
+        "id": msg.id,
+        "sender_role": msg.sender_role,
+        "created_at": msg.created_at,
+        "message_type": msg.message_type,
+        "message": msg.message,
+        "file_id": msg.file_id,
+        "file_name": msg.file_name,
+    }
+
+
+def _format_ticket_history(messages: list[dict[str, Any]]) -> str:
     if not messages:
         return "Сообщений пока нет."
+
     lines = []
     for msg in messages:
-        who = "👤" if msg.sender_role == "user" else "👮"
-        timestamp = msg.created_at.strftime("%d.%m %H:%M") if msg.created_at else ""
-        if msg.message_type == "photo":
-            body = f"[Фото] {msg.message or ''}".strip()
-        elif msg.message_type == "document":
-            filename = f" ({msg.file_name})" if msg.file_name else ""
-            body = f"[Документ{filename}] {msg.message or ''}".strip()
+        who = "👤" if msg["sender_role"] == "user" else "👮"
+        created_at = msg.get("created_at")
+        timestamp = created_at.strftime("%d.%m %H:%M") if created_at else ""
+        if msg["message_type"] == "photo":
+            body = f"[Фото] {msg.get('message') or ''}".strip()
+        elif msg["message_type"] == "document":
+            filename = f" ({msg.get('file_name')})" if msg.get("file_name") else ""
+            body = f"[Документ{filename}] {msg.get('message') or ''}".strip()
         else:
-            body = msg.message
+            body = msg.get("message")
         lines.append(f"{who} {timestamp}\n{body}")
     return "\n\n".join(lines)
 
 
-def _ticket_view_keyboard(messages: list[SupportMessage], ticket_id: int, ticket_status: str, list_kind: str) -> InlineKeyboardMarkup:
-    attachments = [m for m in messages if m.message_type in {"photo", "document"} and m.file_id]
+def _ticket_view_keyboard(messages: list[dict[str, Any]], ticket_id: int, ticket_status: str, list_kind: str) -> InlineKeyboardMarkup:
+    attachments = [m for m in messages if m["message_type"] in {"photo", "document"} and m.get("file_id")]
     rows: list[list[InlineKeyboardButton]] = []
     for msg in attachments[-5:]:
-        icon = "🖼" if msg.message_type == "photo" else "📄"
-        rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg.id}", callback_data=f"profile_attach_{msg.id}")])
+        icon = "🖼" if msg["message_type"] == "photo" else "📄"
+        rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg['id']}", callback_data=f"profile_attach_{msg['id']}")])
 
     if ticket_status == "open":
         rows.append([InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"profile_ticket_close_{ticket_id}")])
@@ -168,22 +183,24 @@ async def profile_ticket_chat(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.edit_message_text("⚠️ Тикет не найден.")
             return
 
-        messages = (
+        message_rows = (
             db.query(SupportMessage)
             .filter(SupportMessage.ticket_id == ticket_id)
             .order_by(SupportMessage.created_at.asc())
             .all()
         )
+        messages = [_serialize_support_message(msg) for msg in message_rows]
+        ticket_status = ticket.status
 
         ticket.unread_for_user = False
-        set_active_ticket_id(db, update.effective_user.id, "user", ticket.id if ticket.status == "open" else None)
+        set_active_ticket_id(db, update.effective_user.id, "user", ticket.id if ticket_status == "open" else None)
         db.commit()
 
     history_text = _format_ticket_history(messages)
-    title = f"💬 Тикет #{ticket_id}\nСтатус: {'открыт' if ticket.status == 'open' else 'закрыт'}\n\n"
+    title = f"💬 Тикет #{ticket_id}\nСтатус: {'открыт' if ticket_status == 'open' else 'закрыт'}\n\n"
     await query.edit_message_text(
         title + history_text,
-        reply_markup=_ticket_view_keyboard(messages, ticket_id, ticket.status, list_kind),
+        reply_markup=_ticket_view_keyboard(messages, ticket_id, ticket_status, list_kind),
     )
 
 

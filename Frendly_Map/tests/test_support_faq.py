@@ -4,8 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from bot.handlers.faq import _render_faq_text
-from bot.handlers.profile import _ticket_view_keyboard
-from bot.models.support_ticket import SupportMessage
+from bot.handlers.profile import _format_ticket_history, _ticket_view_keyboard
 from bot.models.base import Base
 from bot.models.faq_entry import FaqEntry
 from bot.models.support_session import SupportSession
@@ -59,14 +58,24 @@ class SupportFaqTests(unittest.TestCase):
 
     def test_profile_ticket_keyboard_contains_attachment_buttons(self):
         messages = [
-            SupportMessage(id=1, message_type="photo", file_id="p1", message="Фото"),
-            SupportMessage(id=2, message_type="document", file_id="d1", file_name="a.txt", message="Док"),
-            SupportMessage(id=3, message_type="text", file_id=None, message="Привет"),
+            {"id": 1, "message_type": "photo", "file_id": "p1", "message": "Фото"},
+            {"id": 2, "message_type": "document", "file_id": "d1", "file_name": "a.txt", "message": "Док"},
+            {"id": 3, "message_type": "text", "file_id": None, "message": "Привет"},
         ]
         kb = _ticket_view_keyboard(messages, ticket_id=1, ticket_status="open", list_kind="active")
         labels = [btn.text for row in kb.inline_keyboard for btn in row]
         self.assertIn("🖼 Вложение #1", labels)
         self.assertIn("📄 Вложение #2", labels)
+
+    def test_ticket_history_format_for_attachments(self):
+        history = _format_ticket_history([
+            {"sender_role": "user", "created_at": None, "message_type": "text", "message": "Привет"},
+            {"sender_role": "moderator", "created_at": None, "message_type": "photo", "message": "Фото", "file_name": None},
+            {"sender_role": "moderator", "created_at": None, "message_type": "document", "message": "Файл", "file_name": "doc.pdf"},
+        ])
+        self.assertIn("Привет", history)
+        self.assertIn("[Фото] Фото", history)
+        self.assertIn("[Документ (doc.pdf)] Файл", history)
 
 
 if __name__ == "__main__":
