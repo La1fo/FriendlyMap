@@ -4,6 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from bot.handlers.faq import _render_faq_text
+from bot.handlers.profile import _ticket_view_keyboard
+from bot.models.support_ticket import SupportMessage
 from bot.models.base import Base
 from bot.models.faq_entry import FaqEntry
 from bot.models.support_session import SupportSession
@@ -44,6 +46,27 @@ class SupportFaqTests(unittest.TestCase):
         text = _render_faq_text(entries)
         self.assertIn("&lt;b&gt;q?&lt;/b&gt;", text)
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", text)
+
+    def test_profile_ticket_keyboard_hides_close_for_closed_ticket(self):
+        kb_open = _ticket_view_keyboard([], ticket_id=10, ticket_status="open", list_kind="active")
+        kb_closed = _ticket_view_keyboard([], ticket_id=10, ticket_status="closed", list_kind="archive")
+
+        open_labels = [btn.text for row in kb_open.inline_keyboard for btn in row]
+        closed_labels = [btn.text for row in kb_closed.inline_keyboard for btn in row]
+
+        self.assertIn("✅ Закрыть тикет", open_labels)
+        self.assertNotIn("✅ Закрыть тикет", closed_labels)
+
+    def test_profile_ticket_keyboard_contains_attachment_buttons(self):
+        messages = [
+            SupportMessage(id=1, message_type="photo", file_id="p1", message="Фото"),
+            SupportMessage(id=2, message_type="document", file_id="d1", file_name="a.txt", message="Док"),
+            SupportMessage(id=3, message_type="text", file_id=None, message="Привет"),
+        ]
+        kb = _ticket_view_keyboard(messages, ticket_id=1, ticket_status="open", list_kind="active")
+        labels = [btn.text for row in kb.inline_keyboard for btn in row]
+        self.assertIn("🖼 Вложение #1", labels)
+        self.assertIn("📄 Вложение #2", labels)
 
 
 if __name__ == "__main__":

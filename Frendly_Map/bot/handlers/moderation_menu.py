@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
@@ -74,16 +74,6 @@ def _attachments_keyboard(messages: list[SupportMessage]) -> InlineKeyboardMarku
     return InlineKeyboardMarkup(rows)
 
 
-
-def _ticket_actions_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        [["◀️ Назад", "✅ Закрыть тикет"]],
-        resize_keyboard=True
-    )
-
-
-def _back_reply_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup([["◀️ Назад"]], resize_keyboard=True)
 
 
 async def _safe_edit_menu_message(
@@ -184,7 +174,7 @@ async def _render_tickets_list(update: Update, context: ContextTypes.DEFAULT_TYP
         label = f"#{ticket.id} · {user.username or user.first_name or user.id}"
         if ticket.unread_for_moderator:
             label += " 🔔"
-        keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{ticket.id}")])
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{status}_{ticket.id}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_tickets")])
 
     menu_message_id = context.user_data.get("moderation_menu_message_id")
@@ -611,7 +601,7 @@ async def tickets_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         label = f"#{ticket.id} · {user.username or user.first_name or user.id}"
         if ticket.unread_for_moderator:
             label += " 🔔"
-        keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{ticket.id}")])
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"ticket_select_{status}_{ticket.id}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="mod_tickets")])
     menu_message_id = context.user_data.get("moderation_menu_message_id")
     if menu_message_id:
@@ -629,9 +619,9 @@ async def tickets_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    ticket_id = int(query.data.split("_")[-1])
-    context.user_data["moderation_ticket_id"] = ticket_id
-    context.user_data["moderation_ticket_view"] = True
+    _, _, status, ticket_id_raw = query.data.split("_")
+    ticket_id = int(ticket_id_raw)
+
     with get_db_context() as db:
         set_active_ticket_id(db, update.effective_user.id, "moderator", ticket_id)
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
@@ -647,18 +637,26 @@ async def tickets_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.commit()
 
     if not ticket:
-        await query.message.reply_text("⚠️ Тикет не найден.")
+        await query.edit_message_text("⚠️ Тикет не найден.")
         return ConversationHandler.END
 
     user_label = user.username or user.first_name or ticket.user_id
     history_text = _format_ticket_history(messages)
+
+    rows = []
+    for msg in [m for m in messages if m.message_type in {"photo", "document"} and m.file_id][-5:]:
+        icon = "🖼" if msg.message_type == "photo" else "📄"
+        rows.append([InlineKeyboardButton(f"{icon} Вложение #{msg.id}", callback_data=f"mod_attach_{msg.id}")])
+
+    if ticket.status == "open":
+        rows.append([InlineKeyboardButton("✅ Закрыть тикет", callback_data=f"ticket_close_{status}_{ticket.id}")])
+
+    rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"tickets_{'active' if status == 'open' else 'archive'}")])
+
     await query.edit_message_text(
         f"💬 Тикет #{ticket_id} · {user_label}\n\n{history_text}",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Назад к тикетам", callback_data="mod_tickets")]
-        ])
+        reply_markup=InlineKeyboardMarkup(rows),
     )
-    await query.message.reply_text("⁠", reply_markup=_ticket_actions_keyboard())
     return TICKETS_SELECT
 
 
@@ -666,76 +664,31 @@ async def close_ticket_by_moderator(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     if not _ensure_admin(update):
-        await query.message.reply_text("⛔ Только для модераторов.")
+        await query.answer("⛔ Только для модераторов.", show_alert=True)
         return
 
-    ticket_id = int(query.data.split("_")[-1])
+    _, _, status, ticket_id_raw = query.data.split("_")
+    ticket_id = int(ticket_id_raw)
+
     with get_db_context() as db:
         ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
         if not ticket or ticket.status != "open":
-            await query.message.reply_text("⚠️ Тикет уже закрыт или не найден.")
+            await query.answer("⚠️ Тикет уже закрыт или не найден.", show_alert=True)
+            await _render_tickets_list(update, context, "closed")
             return
         ticket.status = "closed"
         ticket.closed_at = datetime.utcnow()
         ticket.closed_by = update.effective_user.id
+        ticket.unread_for_moderator = False
+        ticket.unread_for_user = False
         user_id = ticket.user_id
+        set_active_ticket_id(db, update.effective_user.id, "moderator", None)
         db.commit()
 
-    if context.user_data.get("moderation_ticket_id") == ticket_id:
-        context.user_data.pop("moderation_ticket_id", None)
-
-    await query.message.reply_text("✅ Тикет закрыт и перемещен в архив.")
     await context.bot.send_message(
         chat_id=user_id,
         text=f"✅ Ваш тикет #{ticket_id} закрыт модератором и перемещен в архив.",
     )
-
-
-async def moderation_ticket_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("moderation_ticket_view"):
-        return
-    context.user_data.pop("moderation_ticket_view", None)
-    await update.message.reply_text("⁠", reply_markup=ReplyKeyboardRemove())
-    try:
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
-    except Exception:
-        pass
-    with get_db_context() as db:
-        set_active_ticket_id(db, update.effective_user.id, "moderator", None)
-    status = context.user_data.get("tickets_status", "open")
-    await _render_tickets_list(update, context, status)
-
-
-async def moderation_ticket_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("moderation_ticket_view"):
-        return
-    ticket_id = context.user_data.get("moderation_ticket_id")
-    if not ticket_id:
-        await update.message.reply_text("⚠️ Тикет не выбран.", reply_markup=ReplyKeyboardRemove())
-        return
-    with get_db_context() as db:
-        ticket = db.query(SupportTicket).filter(SupportTicket.id == ticket_id).first()
-        if not ticket or ticket.status != "open":
-            await update.message.reply_text("⚠️ Тикет уже закрыт или не найден.", reply_markup=ReplyKeyboardRemove())
-            return
-        ticket.status = "closed"
-        ticket.closed_at = datetime.utcnow()
-        ticket.closed_by = update.effective_user.id
-        user_id = ticket.user_id
-        db.commit()
-
-    context.user_data.pop("moderation_ticket_view", None)
-    await update.message.reply_text("\u2060", reply_markup=ReplyKeyboardRemove())
-    try:
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
-    except Exception:
-        pass
-    await context.bot.send_message(
-        chat_id=user_id,
-        text=f"✅ Ваш тикет #{ticket_id} закрыт модератором и перемещен в архив.",
-    )
-    with get_db_context() as db:
-        set_active_ticket_id(db, update.effective_user.id, "moderator", None)
     context.user_data["tickets_status"] = "open"
     await _render_tickets_list(update, context, "open")
 
@@ -797,14 +750,12 @@ tickets_handler = ConversationHandler(
     states={
         TICKETS_MENU: [CallbackQueryHandler(tickets_choose_section, pattern="^tickets_(active|archive)$")],
         TICKETS_SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, tickets_search)],
-        TICKETS_SELECT: [CallbackQueryHandler(tickets_select, pattern=r"^ticket_select_\d+$")],
+        TICKETS_SELECT: [CallbackQueryHandler(tickets_select, pattern=r"^ticket_select_(open|closed)_\d+$")],
     },
     fallbacks=[CommandHandler("cancel", moderation_menu)],
     allow_reentry=True,
 )
 
-moderation_close_ticket_handler = CallbackQueryHandler(close_ticket_by_moderator, pattern="^ticket_close_\\d+$")
-moderation_ticket_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), moderation_ticket_back)
-moderation_ticket_close_handler = MessageHandler(filters.Regex("^✅ Закрыть тикет$"), moderation_ticket_close)
+moderation_close_ticket_handler = CallbackQueryHandler(close_ticket_by_moderator, pattern=r"^ticket_close_(open|closed)_\d+$")
 moderation_delete_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), delete_locations_back)
 moderation_ticket_attachment_handler = CallbackQueryHandler(moderation_ticket_attachment, pattern=r"^mod_attach_\d+$")

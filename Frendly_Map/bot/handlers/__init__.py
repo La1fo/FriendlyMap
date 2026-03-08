@@ -7,7 +7,6 @@ from .profile import (
     profile_tickets_list_handler,
     profile_ticket_chat_handler,
     profile_ticket_attachment_handler,
-    profile_ticket_back_handler,
     profile_ticket_close_handler,
 )
 from .add_location import add_location_handler
@@ -20,8 +19,6 @@ from .moderation_menu import (
     delete_location_handler,
     tickets_handler,
     moderation_close_ticket_handler,
-    moderation_ticket_back_handler,
-    moderation_ticket_close_handler,
     moderation_delete_back_handler,
     moderation_ticket_attachment_handler,
 )
@@ -61,7 +58,6 @@ def get_all_handlers():
         profile_tickets_list_handler,
         profile_ticket_chat_handler,
         profile_ticket_attachment_handler,
-        profile_ticket_back_handler,
         profile_ticket_close_handler,
         add_location_handler,
         map_command_handler,
@@ -83,8 +79,6 @@ def get_all_handlers():
         delete_location_handler,
         tickets_handler,
         moderation_close_ticket_handler,
-        moderation_ticket_back_handler,
-        moderation_ticket_close_handler,
         moderation_delete_back_handler,
         moderation_ticket_attachment_handler,
         faq_handler,
