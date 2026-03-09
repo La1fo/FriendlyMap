@@ -4,34 +4,66 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Friendly Map</title>
-    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="container">
-        <header class="header">
+<div class="app-shell">
+    <header class="topbar">
+        <div>
             <h1>Friendly Map</h1>
-            <p>Карта дружественных мест</p>
-        </header>
+            <p>Найди удобные места рядом</p>
+        </div>
+        <button id="findMeBtn" class="btn">📍 Я здесь</button>
+    </header>
 
+    <section class="toolbar">
+        <input id="searchInput" type="search" placeholder="Поиск по названию, адресу, описанию" />
+        <div class="toolbar-actions">
+            <button id="clearFiltersBtn" class="btn secondary">Сброс</button>
+            <button id="refreshBtn" class="btn secondary">Обновить</button>
+        </div>
+        <div id="tagFilters" class="tag-filters"></div>
+    </section>
+
+    <div id="statusBar" class="status hidden"></div>
+
+    <main class="content">
         <div id="map" class="map"></div>
+        <aside class="side-panel">
+            <section>
+                <h3>Результаты</h3>
+                <ul id="locationList" class="location-list"></ul>
+                <div id="emptyState" class="empty hidden">Нет локаций по текущему фильтру.</div>
+            </section>
+        </aside>
+    </main>
 
-        <div class="controls">
-            <button id="myLocationBtn" class="btn btn-primary">Мое местоположение</button>
-            <button id="refreshBtn" class="btn">Обновить карту</button>
+    <section id="detailPanel" class="detail-panel hidden">
+        <div class="detail-header">
+            <h2 id="detailTitle"></h2>
+            <button id="closeDetailBtn" class="btn-icon">✕</button>
         </div>
-
-        <div id="locationInfo" class="location-info hidden">
-            <div class="location-header">
-                <h3 id="locationTitle"></h3>
-                <button id="closeInfo" class="btn-close">×</button>
-            </div>
-            <div id="locationContent"></div>
+        <p id="detailAddress" class="detail-address"></p>
+        <p id="detailDescription" class="detail-description"></p>
+        <div id="detailTags" class="tags"></div>
+        <div id="detailPhotos" class="photo-row"></div>
+        <div id="routeSummary" class="route-summary hidden"></div>
+        <div class="detail-actions">
+            <button id="buildRouteBtn" class="btn">🧭 Построить маршрут</button>
+            <button id="clearRouteBtn" class="btn secondary">Очистить маршрут</button>
         </div>
-    </div>
+    </section>
+</div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/script.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+window.MAP_DEFAULTS = {
+  lat: {{ default_lat }},
+  lng: {{ default_lng }},
+  zoom: {{ default_zoom }}
+};
+</script>
+<script src="/static/script.js"></script>
 </body>
 </html>

@@ -1,121 +1,304 @@
 let map;
-let userLocationMarker = null;
-const API_BASE_URL = window.location.origin;
+let routeLine;
+let userMarker;
+let selectedLocation = null;
+let userCoords = null;
 
-document.addEventListener('DOMContentLoaded', () => {
-    map = L.map('map').setView([55.76, 37.64], 12);
+const markersById = new Map();
+let allLocations = [];
+let filteredLocations = [];
+let selectedTags = new Set();
+let searchTerm = "";
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+const els = {};
 
-    loadApprovedLocations();
-
-    document.getElementById('myLocationBtn').addEventListener('click', findMyLocation);
-    document.getElementById('refreshBtn').addEventListener('click', loadApprovedLocations);
-    document.getElementById('closeInfo').addEventListener('click', closeLocationInfo);
-});
-
-async function loadApprovedLocations() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/map/locations/approved`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const locations = await response.json();
-
-        map.eachLayer(layer => {
-            if (layer instanceof L.Marker) map.removeLayer(layer);
-        });
-
-        locations.forEach(location => addLocationToMap(location));
-    } catch (error) {
-        console.error('Ошибка загрузки локаций:', error);
-        alert('Не удалось загрузить локации.');
-    }
+function showStatus(message, persistent = false) {
+  els.statusBar.textContent = message;
+  els.statusBar.classList.remove("hidden");
+  if (!persistent) {
+    setTimeout(() => els.statusBar.classList.add("hidden"), 2800);
+  }
 }
 
-function addLocationToMap(location) {
-    const marker = L.marker([location.latitude, location.longitude], {
-        icon: L.divIcon({
-            className: 'map-marker',
-            html: `<div class="marker-pin"><span>${location.name.substring(0, 20)}</span></div>`,
-            iconSize: [30, 40],
-            iconAnchor: [15, 40]
-        })
-    }).addTo(map);
-
-    let balloonContent = `<strong>${location.name}</strong>`;
-    if (location.description) balloonContent += `<p>${location.description}</p>`;
-    if (location.address) balloonContent += `<p><strong>📍 Адрес:</strong> ${location.address}</p>`;
-    if (location.tags && location.tags.length > 0) {
-        const tagsHTML = location.tags.map(tag => `<span class="tag">${tag.name}</span>`).join('');
-        balloonContent += `<p><strong>🏷️ Теги:</strong> ${tagsHTML}</p>`;
-    }
-    balloonContent += `<p><em>Одобрено модератором</em></p>`;
-    marker.bindPopup(balloonContent);
-
-    marker.on('click', () => showLocationInfo(location));
+function hideStatus() {
+  els.statusBar.classList.add("hidden");
 }
 
-function showLocationInfo(location) {
-    const infoPanel = document.getElementById('locationInfo');
-    const title = document.getElementById('locationTitle');
-    const content = document.getElementById('locationContent');
-
-    title.textContent = location.name;
-
-    let html = '';
-    if (location.description) html += `<p>${location.description}</p>`;
-    if (location.address) html += `<p><strong>📍 Адрес:</strong> ${location.address}</p>`;
-    html += `<p><strong>📅 Добавлено:</strong> ${new Date(location.created_at).toLocaleDateString('ru-RU')}</p>`;
-    html += `<p><strong>✅ Статус:</strong> Одобрено</p>`;
-
-    if (location.tags && location.tags.length > 0) {
-        const tagsHTML = location.tags.map(tag => `<span class="tag">${tag.name}</span>`).join('');
-        html += `<div class="tags"><strong>🏷️ Теги:</strong> ${tagsHTML}</div>`;
-    }
-
-    if (location.photos && location.photos.length > 0) {
-        const photosHTML = location.photos.map((photo, i) =>
-            `<img src="https://via.placeholder.com/80x80/4CAF50/FFFFFF?text=Photo${i+1}" 
-                  alt="Фото ${i+1}" class="photo-thumb">`
-        ).join('');
-        html += `<div class="photo-gallery"><strong>📷 Фотографии:</strong> ${photosHTML}</div>`;
-    }
-
-    content.innerHTML = html;
-    infoPanel.classList.remove('hidden');
-    map.setView([location.latitude, location.longitude], 14);
+function formatDistance(meters) {
+  return meters >= 1000 ? `${(meters / 1000).toFixed(1)} км` : `${Math.round(meters)} м`;
 }
 
-function closeLocationInfo() {
-    document.getElementById('locationInfo').classList.add('hidden');
+function formatDuration(seconds) {
+  const m = Math.round(seconds / 60);
+  if (m < 60) return `${m} мин`;
+  const h = Math.floor(m / 60);
+  return `${h} ч ${m % 60} мин`;
 }
 
-function findMyLocation() {
+function initDom() {
+  els.searchInput = document.getElementById("searchInput");
+  els.refreshBtn = document.getElementById("refreshBtn");
+  els.findMeBtn = document.getElementById("findMeBtn");
+  els.clearFiltersBtn = document.getElementById("clearFiltersBtn");
+  els.tagFilters = document.getElementById("tagFilters");
+  els.locationList = document.getElementById("locationList");
+  els.emptyState = document.getElementById("emptyState");
+  els.detailPanel = document.getElementById("detailPanel");
+  els.detailTitle = document.getElementById("detailTitle");
+  els.detailAddress = document.getElementById("detailAddress");
+  els.detailDescription = document.getElementById("detailDescription");
+  els.detailTags = document.getElementById("detailTags");
+  els.detailPhotos = document.getElementById("detailPhotos");
+  els.routeSummary = document.getElementById("routeSummary");
+  els.buildRouteBtn = document.getElementById("buildRouteBtn");
+  els.clearRouteBtn = document.getElementById("clearRouteBtn");
+  els.closeDetailBtn = document.getElementById("closeDetailBtn");
+  els.statusBar = document.getElementById("statusBar");
+}
+
+function initMap() {
+  map = L.map("map").setView([window.MAP_DEFAULTS.lat, window.MAP_DEFAULTS.lng], window.MAP_DEFAULTS.zoom);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors",
+    maxZoom: 19,
+  }).addTo(map);
+}
+
+async function apiJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`${response.status}: ${errText}`);
+  }
+  return response.json();
+}
+
+async function loadTags() {
+  try {
+    const tags = await apiJson("/api/tag/tags");
+    renderTags(tags || []);
+  } catch {
+    showStatus("Не удалось загрузить теги");
+  }
+}
+
+function renderTags(tags) {
+  els.tagFilters.innerHTML = "";
+  tags.forEach((tag) => {
+    const chip = document.createElement("button");
+    chip.className = "tag-chip";
+    chip.textContent = tag.name;
+    chip.dataset.tag = tag.name.toLowerCase();
+    chip.addEventListener("click", () => {
+      const key = chip.dataset.tag;
+      if (selectedTags.has(key)) selectedTags.delete(key);
+      else selectedTags.add(key);
+      chip.classList.toggle("active", selectedTags.has(key));
+      applyFilters();
+    });
+    els.tagFilters.appendChild(chip);
+  });
+}
+
+function renderMarkers(locations) {
+  markersById.forEach((marker) => map.removeLayer(marker));
+  markersById.clear();
+
+  locations.forEach((loc) => {
+    const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
+    marker.on("click", () => selectLocation(loc.id, true));
+    markersById.set(loc.id, marker);
+  });
+
+  if (locations.length && !selectedLocation) {
+    const bounds = L.latLngBounds(locations.map((l) => [l.latitude, l.longitude]));
+    map.fitBounds(bounds.pad(0.2));
+  }
+}
+
+function renderList(locations) {
+  els.locationList.innerHTML = "";
+  els.emptyState.classList.toggle("hidden", locations.length > 0);
+
+  locations.forEach((loc) => {
+    const item = document.createElement("li");
+    item.className = "location-item";
+    item.innerHTML = `<h4>${loc.name}</h4><p>${loc.address || "Адрес не указан"}</p>`;
+    item.addEventListener("click", () => selectLocation(loc.id, true));
+    els.locationList.appendChild(item);
+  });
+}
+
+function locationMatches(location) {
+  const tags = (location.tags || []).map((t) => (t.name || "").toLowerCase());
+  const tagsOk = selectedTags.size === 0 || [...selectedTags].every((t) => tags.includes(t));
+
+  const haystack = [location.name, location.address, location.description].join(" ").toLowerCase();
+  const searchOk = !searchTerm || haystack.includes(searchTerm);
+  return tagsOk && searchOk;
+}
+
+function applyFilters() {
+  filteredLocations = allLocations.filter(locationMatches);
+  renderMarkers(filteredLocations);
+  renderList(filteredLocations);
+
+  if (selectedLocation && !filteredLocations.find((l) => l.id === selectedLocation.id)) {
+    closeDetail();
+  }
+}
+
+function selectLocation(locationId, pan = false) {
+  const loc = allLocations.find((l) => l.id === locationId);
+  if (!loc) return;
+  selectedLocation = loc;
+
+  const marker = markersById.get(loc.id);
+  if (marker) marker.openPopup();
+  if (pan) map.setView([loc.latitude, loc.longitude], 15);
+
+  els.detailTitle.textContent = loc.name;
+  els.detailAddress.textContent = loc.address || "Адрес не указан";
+  els.detailDescription.textContent = loc.description || "Описание отсутствует";
+
+  els.detailTags.innerHTML = "";
+  (loc.tags || []).forEach((tag) => {
+    const span = document.createElement("span");
+    span.className = "tag";
+    span.textContent = tag.name;
+    els.detailTags.appendChild(span);
+  });
+
+  els.detailPhotos.innerHTML = "";
+  if (!loc.photos || !loc.photos.length) {
+    const fallback = document.createElement("span");
+    fallback.className = "empty";
+    fallback.textContent = "Фото отсутствуют";
+    els.detailPhotos.appendChild(fallback);
+  } else {
+    loc.photos.forEach((photo) => {
+      const img = document.createElement("img");
+      img.src = photo.url;
+      img.loading = "lazy";
+      img.alt = `Фото ${loc.name}`;
+      img.onerror = () => {
+        img.replaceWith(document.createTextNode("Фото недоступно"));
+      };
+      els.detailPhotos.appendChild(img);
+    });
+  }
+
+  els.routeSummary.classList.add("hidden");
+  els.detailPanel.classList.remove("hidden");
+}
+
+function closeDetail() {
+  selectedLocation = null;
+  els.detailPanel.classList.add("hidden");
+}
+
+function ensureUserLocation() {
+  return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-        alert('Геолокация не поддерживается');
-        return;
+      reject(new Error("Геолокация не поддерживается"));
+      return;
     }
-
     navigator.geolocation.getCurrentPosition(
-        pos => {
-            const coords = [pos.coords.latitude, pos.coords.longitude];
-            if (userLocationMarker) map.removeLayer(userLocationMarker);
-
-            userLocationMarker = L.marker(coords, {
-                icon: L.divIcon({
-                    className: 'user-marker',
-                    html: '<div class="user-pin">📍</div>',
-                    iconSize: [30, 30],
-                    iconAnchor: [15, 30]
-                })
-            }).addTo(map);
-
-            map.setView(coords, 15);
-        },
-        err => {
-            console.error('Ошибка геолокации:', err);
-            alert('Не удалось определить местоположение');
-        }
+      (position) => {
+        userCoords = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        if (userMarker) map.removeLayer(userMarker);
+        userMarker = L.marker([userCoords.lat, userCoords.lng]).addTo(map).bindPopup("Вы здесь");
+        resolve(userCoords);
+      },
+      () => reject(new Error("Не удалось получить геопозицию")),
+      { enableHighAccuracy: true, timeout: 10000 }
     );
+  });
 }
+
+async function findMe() {
+  try {
+    const coords = await ensureUserLocation();
+    map.setView([coords.lat, coords.lng], 15);
+    showStatus("Местоположение определено");
+  } catch (err) {
+    showStatus(err.message, true);
+  }
+}
+
+async function buildRoute() {
+  if (!selectedLocation) {
+    showStatus("Сначала выберите локацию", true);
+    return;
+  }
+
+  try {
+    const coords = userCoords || (await ensureUserLocation());
+    const params = new URLSearchParams({
+      start_lat: coords.lat,
+      start_lng: coords.lng,
+      end_lat: selectedLocation.latitude,
+      end_lng: selectedLocation.longitude,
+    });
+    const route = await apiJson(`/api/map/route?${params.toString()}`);
+
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline(route.points.map((p) => [p.lat, p.lng]), { color: "#16a34a", weight: 5 }).addTo(map);
+    map.fitBounds(routeLine.getBounds().pad(0.1));
+
+    els.routeSummary.textContent = `Маршрут: ${formatDistance(route.distance_m)} · ${formatDuration(route.duration_s)}`;
+    els.routeSummary.classList.remove("hidden");
+  } catch {
+    showStatus("Не удалось построить маршрут", true);
+  }
+}
+
+function clearRoute() {
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
+  els.routeSummary.classList.add("hidden");
+}
+
+async function loadLocations() {
+  hideStatus();
+  try {
+    const payload = await apiJson("/api/map/locations/approved");
+    allLocations = payload.items || [];
+    applyFilters();
+    if (!allLocations.length) showStatus("Пока нет одобренных локаций", true);
+  } catch {
+    showStatus("Ошибка загрузки локаций", true);
+  }
+}
+
+function bindEvents() {
+  els.searchInput.addEventListener("input", (e) => {
+    searchTerm = e.target.value.trim().toLowerCase();
+    applyFilters();
+  });
+  els.clearFiltersBtn.addEventListener("click", () => {
+    selectedTags.clear();
+    searchTerm = "";
+    els.searchInput.value = "";
+    document.querySelectorAll(".tag-chip").forEach((chip) => chip.classList.remove("active"));
+    applyFilters();
+    clearRoute();
+  });
+  els.refreshBtn.addEventListener("click", loadLocations);
+  els.findMeBtn.addEventListener("click", findMe);
+  els.buildRouteBtn.addEventListener("click", buildRoute);
+  els.clearRouteBtn.addEventListener("click", clearRoute);
+  els.closeDetailBtn.addEventListener("click", closeDetail);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  initDom();
+  initMap();
+  bindEvents();
+  await Promise.all([loadTags(), loadLocations()]);
+});
