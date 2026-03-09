@@ -9,9 +9,9 @@ from telegram.ext import (
     filters,
 )
 
+from bot.config import settings
 from bot.database import get_db_context
 from bot.keyboards.main_menu import get_main_menu
-from bot.services.support_state import get_main_menu_unread_flag
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.location_service import LocationService
 from bot.utils.users import get_or_create_user
@@ -37,6 +37,16 @@ def _description_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
+
+
+
+def _location_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": settings.WEB_APP_URL + "/map"})],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
 
 def _photo_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -115,8 +125,6 @@ async def _render_flow_message(
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_user.id
-    with get_db_context() as db:
-        unread = get_main_menu_unread_flag(db, chat_id)
     menu_id = context.user_data.get("main_menu_message_id")
     if menu_id:
         try:
@@ -124,7 +132,7 @@ async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Главное меню:",
                 chat_id=chat_id,
                 message_id=menu_id,
-                reply_markup=get_main_menu(chat_id, unread_moderation=unread),
+                reply_markup=get_main_menu(chat_id),
             )
             return
         except BadRequest:
@@ -133,7 +141,7 @@ async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sent = await context.bot.send_message(
         chat_id=chat_id,
         text="Главное меню:",
-        reply_markup=get_main_menu(chat_id, unread_moderation=unread),
+        reply_markup=get_main_menu(chat_id),
     )
     context.user_data["main_menu_message_id"] = sent.message_id
 
@@ -160,8 +168,8 @@ async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_flow_message(
         update,
         context,
-        "📌 Отправь точку на карте (скрепка → Геопозиция → Выбрать место на карте).",
-        _cancel_keyboard(),
+        "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
+        _location_keyboard(),
     )
     return ASK_LOCATION
 
@@ -172,8 +180,8 @@ async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_flow_message(
         update,
         context,
-        "📌 Отправь точку на карте (скрепка → Геопозиция → Выбрать место на карте).",
-        _cancel_keyboard(),
+        "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
+        _location_keyboard(),
     )
     return ASK_LOCATION
 
@@ -184,8 +192,8 @@ async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _render_flow_message(
             update,
             context,
-            "⚠️ Нужна геопозиция. Выбери точку на карте и отправь её.",
-            _cancel_keyboard(),
+            "⚠️ Нужна геопозиция. Открой карту, выбери точку и отправь её.",
+            _location_keyboard(),
         )
         return ASK_LOCATION
 
