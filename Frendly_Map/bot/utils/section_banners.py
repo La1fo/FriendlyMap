@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from telegram import InlineKeyboardMarkup, InputFile, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 ASSETS_DIR = BASE_DIR / "assets" / "sections"
@@ -14,37 +17,31 @@ SECTION_BANNERS = {
         "title": "Friendly Map",
         "description": "Привет! Я Friendly Map Bot — помогу находить интересные места, сохранять локации и открывать карту.",
         "asset": "main_menu.png",
-        "fallback_asset": "main_menu.svg",
     },
     "profile": {
         "title": "Профиль",
         "description": "Здесь собрана твоя статистика, прогресс и основная информация о профиле.",
         "asset": "profile.png",
-        "fallback_asset": "profile.svg",
     },
     "achievements": {
         "title": "Достижения",
         "description": "Следи за прогрессом, открывай награды и собирай свои достижения.",
         "asset": "achievements.png",
-        "fallback_asset": "achievements.svg",
     },
     "leaderboard": {
         "title": "Таблица лидеров",
         "description": "Смотри рейтинг пользователей и проверяй, кто сейчас в топе.",
         "asset": "leaderboard.png",
-        "fallback_asset": "leaderboard.svg",
     },
     "faq": {
         "title": "FAQ",
         "description": "Здесь собраны ответы на частые вопросы и полезная информация по боту.",
         "asset": "faq.png",
-        "fallback_asset": "faq.svg",
     },
     "moderation": {
         "title": "Модерация",
         "description": "Панель управления для проверки контента, заявок и административных действий.",
         "asset": "moderation.png",
-        "fallback_asset": "moderation.svg",
     },
 }
 
@@ -53,13 +50,26 @@ def get_section_banner(section: str) -> dict:
     return SECTION_BANNERS.get(section, SECTION_BANNERS["main_menu"])
 
 
-def _resolve_asset(section: str) -> tuple[Path, bool]:
+def _resolve_banner_photo_path(section: str) -> Path:
     item = get_section_banner(section)
-    png = ASSETS_DIR / item["asset"]
-    if png.exists():
-        return png, True
-    fallback = ASSETS_DIR / item["fallback_asset"]
-    return fallback, False
+    photo_path = ASSETS_DIR / item["asset"]
+    if not photo_path.exists():
+        message = (
+            f"Section banner is missing: section='{section}', expected_path='{photo_path}'. "
+            "Banner images must be provided as PNG files in bot/assets/sections/."
+        )
+        logger.error(message)
+        raise FileNotFoundError(message)
+
+    if photo_path.suffix.lower() != ".png":
+        message = (
+            f"Invalid section banner format for section='{section}': '{photo_path.name}'. "
+            "Only PNG files are supported for section banners."
+        )
+        logger.error(message)
+        raise ValueError(message)
+
+    return photo_path
 
 
 async def send_section_banner(
@@ -72,7 +82,7 @@ async def send_section_banner(
     store_message_key: str | None = None,
     delete_origin: bool = True,
 ):
-    chat_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     origin_message = update.callback_query.message if update.callback_query else None
 
     if update.callback_query:
@@ -92,24 +102,15 @@ async def send_section_banner(
         except Exception:
             pass
 
-    asset_path, can_send_photo = _resolve_asset(section)
-    with asset_path.open("rb") as media:
-        if can_send_photo:
-            sent = await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=InputFile(media, filename=asset_path.name),
-                caption=caption,
-                parse_mode=parse_mode,
-                reply_markup=reply_markup,
-            )
-        else:
-            sent = await context.bot.send_document(
-                chat_id=chat_id,
-                document=InputFile(media, filename=asset_path.name),
-                caption=caption,
-                parse_mode=parse_mode,
-                reply_markup=reply_markup,
-            )
+    photo_path = _resolve_banner_photo_path(section)
+    with photo_path.open("rb") as media:
+        sent = await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=InputFile(media, filename=photo_path.name),
+            caption=caption,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+        )
 
     context.user_data["active_section_banner_message_id"] = sent.message_id
     if store_message_key:
