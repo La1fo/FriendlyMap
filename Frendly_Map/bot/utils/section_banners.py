@@ -5,6 +5,7 @@ from pathlib import Path
 
 from telegram import InlineKeyboardMarkup, InputFile, Update
 from telegram.constants import ParseMode
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,10 @@ SECTION_BANNERS = {
 }
 
 
+class BannerAssetError(RuntimeError):
+    """Raised when section banner asset is missing or invalid."""
+
+
 def get_section_banner(section: str) -> dict:
     return SECTION_BANNERS.get(section, SECTION_BANNERS["main_menu"])
 
@@ -54,22 +59,48 @@ def _resolve_banner_photo_path(section: str) -> Path:
     item = get_section_banner(section)
     photo_path = ASSETS_DIR / item["asset"]
     if not photo_path.exists():
-        message = (
+        raise BannerAssetError(
             f"Section banner is missing: section='{section}', expected_path='{photo_path}'. "
             "Banner images must be provided as PNG files in bot/assets/sections/."
         )
-        logger.error(message)
-        raise FileNotFoundError(message)
 
     if photo_path.suffix.lower() != ".png":
-        message = (
+        raise BannerAssetError(
             f"Invalid section banner format for section='{section}': '{photo_path.name}'. "
             "Only PNG files are supported for section banners."
         )
-        logger.error(message)
-        raise ValueError(message)
 
     return photo_path
+
+
+def _store_section_message_id(
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int,
+    store_message_key: str | None,
+) -> None:
+    context.user_data["active_section_banner_message_id"] = message_id
+    if store_message_key:
+        context.user_data[store_message_key] = message_id
+
+
+async def _send_banner_fallback_text(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    caption: str,
+    parse_mode: str,
+    reply_markup: InlineKeyboardMarkup | None,
+):
+    fallback_text = (
+        f"{caption}\n\n"
+        "⚠️ Баннер временно недоступен. "
+        "Проверьте локальные PNG-ассеты в bot/assets/sections/."
+    )
+    return await context.bot.send_message(
+        chat_id=chat_id,
+        text=fallback_text,
+        parse_mode=parse_mode,
+        reply_markup=reply_markup,
+    )
 
 
 async def send_section_banner(
@@ -104,34 +135,23 @@ async def send_section_banner(
 
     try:
         photo_path = _resolve_banner_photo_path(section)
-    except (FileNotFoundError, ValueError) as exc:
-        logger.exception("Failed to resolve section banner", exc_info=exc)
-        fallback_text = (
-            f"{caption}\n\n"
-            "⚠️ Баннер временно недоступен. "
-            "Проверьте локальные PNG-ассеты в bot/assets/sections/."
-        )
-        sent = await context.bot.send_message(
+        with photo_path.open("rb") as media:
+            sent = await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=InputFile(media, filename=photo_path.name),
+                caption=caption,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+    except (BannerAssetError, OSError, TelegramError) as exc:
+        logger.error("Section banner send failed for '%s': %s", section, exc)
+        sent = await _send_banner_fallback_text(
+            context=context,
             chat_id=chat_id,
-            text=fallback_text,
-            parse_mode=parse_mode,
-            reply_markup=reply_markup,
-        )
-        context.user_data["active_section_banner_message_id"] = sent.message_id
-        if store_message_key:
-            context.user_data[store_message_key] = sent.message_id
-        return sent
-
-    with photo_path.open("rb") as media:
-        sent = await context.bot.send_photo(
-            chat_id=chat_id,
-            photo=InputFile(media, filename=photo_path.name),
             caption=caption,
             parse_mode=parse_mode,
             reply_markup=reply_markup,
         )
 
-    context.user_data["active_section_banner_message_id"] = sent.message_id
-    if store_message_key:
-        context.user_data[store_message_key] = sent.message_id
+    _store_section_message_id(context, sent.message_id, store_message_key)
     return sent
