@@ -40,7 +40,10 @@ function initDom() {
   els.refreshBtn = document.getElementById("refreshBtn");
   els.findMeBtn = document.getElementById("findMeBtn");
   els.clearFiltersBtn = document.getElementById("clearFiltersBtn");
+  els.tagsToggleBtn = document.getElementById("tagsToggleBtn");
+  els.tagFiltersPanel = document.getElementById("tagFiltersPanel");
   els.tagFilters = document.getElementById("tagFilters");
+  els.selectedTags = document.getElementById("selectedTags");
   els.locationList = document.getElementById("locationList");
   els.emptyState = document.getElementById("emptyState");
   els.detailPanel = document.getElementById("detailPanel");
@@ -82,6 +85,22 @@ async function loadTags() {
   }
 }
 
+
+function renderSelectedTags() {
+  els.selectedTags.innerHTML = "";
+  if (selectedTags.size === 0) {
+    els.selectedTags.classList.add("hidden");
+    return;
+  }
+  els.selectedTags.classList.remove("hidden");
+  [...selectedTags].forEach((tagName) => {
+    const chip = document.createElement("span");
+    chip.className = "tag-chip active";
+    chip.textContent = `#${tagName}`;
+    els.selectedTags.appendChild(chip);
+  });
+}
+
 function renderTags(tags) {
   els.tagFilters.innerHTML = "";
   tags.forEach((tag) => {
@@ -95,9 +114,11 @@ function renderTags(tags) {
       else selectedTags.add(key);
       chip.classList.toggle("active", selectedTags.has(key));
       applyFilters();
+      renderSelectedTags();
     });
     els.tagFilters.appendChild(chip);
   });
+  renderSelectedTags();
 }
 
 function renderMarkers(locations) {
@@ -285,9 +306,13 @@ function bindEvents() {
     selectedTags.clear();
     searchTerm = "";
     els.searchInput.value = "";
-    document.querySelectorAll(".tag-chip").forEach((chip) => chip.classList.remove("active"));
+    document.querySelectorAll("#tagFilters .tag-chip").forEach((chip) => chip.classList.remove("active"));
     applyFilters();
+    renderSelectedTags();
     clearRoute();
+  });
+  els.tagsToggleBtn.addEventListener("click", () => {
+    els.tagFiltersPanel.classList.toggle("hidden");
   });
   els.refreshBtn.addEventListener("click", loadLocations);
   els.findMeBtn.addEventListener("click", findMe);

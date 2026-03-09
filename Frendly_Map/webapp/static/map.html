@@ -20,10 +20,15 @@
     <section class="toolbar">
         <input id="searchInput" type="search" placeholder="Поиск по названию, адресу, описанию" />
         <div class="toolbar-actions">
+            <button id="tagsToggleBtn" class="btn secondary">🏷️ Теги</button>
             <button id="clearFiltersBtn" class="btn secondary">Сброс</button>
             <button id="refreshBtn" class="btn secondary">Обновить</button>
         </div>
-        <div id="tagFilters" class="tag-filters"></div>
+        <div id="selectedTags" class="tag-filters hidden"></div>
+        <div id="tagFiltersPanel" class="tags-panel hidden">
+            <p class="tags-panel-title">Выберите теги:</p>
+            <div id="tagFilters" class="tag-filters"></div>
+        </div>
     </section>
 
     <div id="statusBar" class="status hidden"></div>

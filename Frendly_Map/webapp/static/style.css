@@ -38,3 +38,7 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; back
   .content { display:block; position:relative; }
   .side-panel { position:absolute; z-index:700; left:8px; right:8px; bottom:8px; width:auto; max-height:32vh; border:1px solid #dbe2ea; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,.16); }
 }
+
+.tags-panel { background:#f8fafc; border:1px solid #dbe2ea; border-radius:10px; padding:8px; }
+.tags-panel-title { margin:0 0 6px; font-size:12px; color:#64748b; }
+#selectedTags { min-height: 28px; }
