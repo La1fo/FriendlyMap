@@ -23,7 +23,6 @@ async def post_init(application: Application):
         ("achievements", "Достижения"),
         ("pending", "Модерация локаций"),
         ("moderation", "Панель модерации"),
-        ("support", "Поддержка"),
         ("faq", "FAQ"),
     ])
     init_db()

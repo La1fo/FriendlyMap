@@ -1,14 +1,5 @@
 from .start import start_handler
-from .profile import (
-    profile_handler,
-    profile_menu_handler,
-    profile_callback_handler,
-    profile_tickets_menu_handler,
-    profile_tickets_list_handler,
-    profile_ticket_chat_handler,
-    profile_ticket_attachment_handler,
-    profile_ticket_close_handler,
-)
+from .profile import profile_handler, profile_menu_handler, profile_callback_handler
 from .add_location import add_location_handler
 from .moderation import pending_handler, moderation_callback_handler, moderation_detail_handler
 from .moderation_menu import (
@@ -17,12 +8,7 @@ from .moderation_menu import (
     moderation_locations_handler,
     points_handler,
     delete_location_handler,
-    tickets_handler,
-    moderation_close_ticket_handler,
     moderation_delete_back_handler,
-    moderation_ticket_attachment_handler,
-    moderation_ticket_reply_handler,
-    moderation_ticket_status_handler,
 )
 from .map import map_command_handler, map_menu_handler, map_callback_handler
 from .leaderboard import leaderboard_handler, leaderboard_menu_handler, leaderboard_callback_handler
@@ -38,18 +24,6 @@ from .faq import (
     faq_edit_question_handler,
     faq_edit_answer_handler,
 )
-from .support import (
-    support_handler,
-    support_callback_handler,
-    support_open_handler,
-    support_open_ticket_handler,
-    support_archive_handler,
-    support_message_router,
-    support_start_reply_handler,
-    support_close_callback_handler,
-    support_attachment_handler,
-    moderator_message_router,
-)
 from .menu import main_menu_callback_handler
 
 
@@ -59,11 +33,6 @@ def get_all_handlers():
         profile_handler,
         profile_menu_handler,
         profile_callback_handler,
-        profile_tickets_menu_handler,
-        profile_tickets_list_handler,
-        profile_ticket_chat_handler,
-        profile_ticket_attachment_handler,
-        profile_ticket_close_handler,
         add_location_handler,
         map_command_handler,
         map_menu_handler,
@@ -82,12 +51,7 @@ def get_all_handlers():
         moderation_locations_handler,
         points_handler,
         delete_location_handler,
-        tickets_handler,
-        moderation_close_ticket_handler,
         moderation_delete_back_handler,
-        moderation_ticket_attachment_handler,
-        moderation_ticket_reply_handler,
-        moderation_ticket_status_handler,
         faq_handler,
         faq_add_handler,
         faq_callback_handler,
@@ -97,15 +61,5 @@ def get_all_handlers():
         faq_edit_pick_handler,
         faq_edit_question_handler,
         faq_edit_answer_handler,
-        support_handler,
-        support_callback_handler,
-        support_open_handler,
-        support_open_ticket_handler,
-        support_archive_handler,
-        support_start_reply_handler,
-        support_close_callback_handler,
-        support_attachment_handler,
-        support_message_router,
-        moderator_message_router,
         main_menu_callback_handler,
     ]
