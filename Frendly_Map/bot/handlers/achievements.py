@@ -49,16 +49,16 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]])
     banner = get_section_banner("achievements")
+    details = "\n".join(lines).strip()
+    caption = f"<b>{banner['title']}</b>\n{banner['description']}\n\n{details}".strip()
+    if len(caption) > 1024:
+        caption = caption[:1021] + "..."
+
     await send_section_banner(
         update,
         context,
         "achievements",
-        f"<b>{banner['title']}</b>",
-    )
-    await context.bot.send_message(
-        chat_id=update.effective_user.id,
-        text="\n".join(lines).strip(),
-        parse_mode="HTML",
+        caption,
         reply_markup=back_kb,
     )
 
