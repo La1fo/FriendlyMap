@@ -7,6 +7,7 @@ from bot.handlers.faq import _render_faq_text
 from bot.models.base import Base
 from bot.models.faq_entry import FaqEntry
 from bot.models.support_ticket import SupportTicket
+from bot.services.location_service import LocationService
 from bot.services.support_state import (
     get_active_open_ticket_id,
     get_active_ticket_id,
@@ -23,6 +24,40 @@ class SupportFaqTests(unittest.TestCase):
         Base.metadata.create_all(bind=engine)
         self.Session = sessionmaker(bind=engine)
 
+
+
+    def test_location_service_ensure_tags_is_idempotent(self):
+        db = self.Session()
+        catalog = {"Еда": ["кафе", "бар"], "Отдых": ["парк"]}
+        LocationService.ensure_tags(db, catalog)
+        LocationService.ensure_tags(db, catalog)
+
+        from bot.models.tag import Tag
+        tags = db.query(Tag).all()
+        self.assertEqual(len(tags), 3)
+        db.close()
+
+    def test_add_tags_by_ids_avoids_duplicates(self):
+        db = self.Session()
+        from bot.models.location import Location
+        from bot.models.tag import Tag
+        from bot.models.location_tag import LocationTag
+
+        loc = Location(user_id=1, name="test", latitude=1.0, longitude=2.0, status="pending")
+        t1 = Tag(name="кафе", category="Еда")
+        t2 = Tag(name="парк", category="Отдых")
+        db.add_all([loc, t1, t2])
+        db.commit()
+        db.refresh(loc)
+        db.refresh(t1)
+        db.refresh(t2)
+
+        LocationService.add_tags_by_ids(db, loc.id, [t1.id, t2.id, t1.id])
+        LocationService.add_tags_by_ids(db, loc.id, [t2.id])
+
+        links = db.query(LocationTag).filter(LocationTag.location_id == loc.id).all()
+        self.assertEqual(len(links), 2)
+        db.close()
 
     def test_support_ticket_default_status_is_new(self):
         db = self.Session()
