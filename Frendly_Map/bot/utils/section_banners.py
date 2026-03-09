@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 from pathlib import Path
 
 from telegram import InlineKeyboardMarkup, InputFile, Update
@@ -17,32 +18,32 @@ SECTION_BANNERS = {
     "main_menu": {
         "title": "Friendly Map",
         "description": "Привет! Я Friendly Map Bot — помогу находить интересные места, сохранять локации и открывать карту.",
-        "asset": "main_menu.png",
+        "asset_stem": "main_menu",
     },
     "profile": {
         "title": "Профиль",
         "description": "Здесь собрана твоя статистика, прогресс и основная информация о профиле.",
-        "asset": "profile.png",
+        "asset_stem": "profile",
     },
     "achievements": {
         "title": "Достижения",
         "description": "Следи за прогрессом, открывай награды и собирай свои достижения.",
-        "asset": "achievements.png",
+        "asset_stem": "achievements",
     },
     "leaderboard": {
         "title": "Таблица лидеров",
         "description": "Смотри рейтинг пользователей и проверяй, кто сейчас в топе.",
-        "asset": "leaderboard.png",
+        "asset_stem": "leaderboard",
     },
     "faq": {
         "title": "FAQ",
         "description": "Здесь собраны ответы на частые вопросы и полезная информация по боту.",
-        "asset": "faq.png",
+        "asset_stem": "faq",
     },
     "moderation": {
         "title": "Модерация",
         "description": "Панель управления для проверки контента, заявок и административных действий.",
-        "asset": "moderation.png",
+        "asset_stem": "moderation",
     },
 }
 
@@ -55,22 +56,39 @@ def get_section_banner(section: str) -> dict:
     return SECTION_BANNERS.get(section, SECTION_BANNERS["main_menu"])
 
 
-def _resolve_banner_photo_path(section: str) -> Path:
+def _svg_to_png(svg_path: Path) -> BytesIO:
+    try:
+        import cairosvg
+    except ImportError as exc:
+        raise BannerAssetError(
+            "SVG banner found, but cairosvg is not installed. "
+            "Install dependency 'cairosvg' or provide PNG banners in bot/assets/sections/."
+        ) from exc
+
+    png_bytes = cairosvg.svg2png(url=str(svg_path))
+    png_buffer = BytesIO(png_bytes)
+    png_buffer.name = f"{svg_path.stem}.png"
+    png_buffer.seek(0)
+    return png_buffer
+
+
+def _resolve_banner_photo_input(section: str) -> tuple[InputFile, str]:
     item = get_section_banner(section)
-    photo_path = ASSETS_DIR / item["asset"]
-    if not photo_path.exists():
-        raise BannerAssetError(
-            f"Section banner is missing: section='{section}', expected_path='{photo_path}'. "
-            "Banner images must be provided as PNG files in bot/assets/sections/."
-        )
+    stem = item["asset_stem"]
 
-    if photo_path.suffix.lower() != ".png":
-        raise BannerAssetError(
-            f"Invalid section banner format for section='{section}': '{photo_path.name}'. "
-            "Only PNG files are supported for section banners."
-        )
+    png_path = ASSETS_DIR / f"{stem}.png"
+    if png_path.exists():
+        return InputFile(png_path.open("rb"), filename=png_path.name), "png"
 
-    return photo_path
+    svg_path = ASSETS_DIR / f"{stem}.svg"
+    if svg_path.exists():
+        png_buffer = _svg_to_png(svg_path)
+        return InputFile(png_buffer, filename=f"{stem}.png"), "svg"
+
+    raise BannerAssetError(
+        f"Section banner is missing: section='{section}', "
+        f"expected one of '{png_path}' or '{svg_path}'."
+    )
 
 
 def _store_section_message_id(
@@ -93,7 +111,7 @@ async def _send_banner_fallback_text(
     fallback_text = (
         f"{caption}\n\n"
         "⚠️ Баннер временно недоступен. "
-        "Проверьте локальные PNG-ассеты в bot/assets/sections/."
+        "Проверьте локальные assets в bot/assets/sections/ (PNG или SVG + cairosvg)."
     )
     return await context.bot.send_message(
         chat_id=chat_id,
@@ -134,15 +152,15 @@ async def send_section_banner(
             pass
 
     try:
-        photo_path = _resolve_banner_photo_path(section)
-        with photo_path.open("rb") as media:
-            sent = await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=InputFile(media, filename=photo_path.name),
-                caption=caption,
-                parse_mode=parse_mode,
-                reply_markup=reply_markup,
-            )
+        photo, source_format = _resolve_banner_photo_input(section)
+        sent = await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=caption,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+        )
+        logger.debug("Section banner sent for '%s' from %s source", section, source_format)
     except (BannerAssetError, OSError, TelegramError) as exc:
         logger.error("Section banner send failed for '%s': %s", section, exc)
         sent = await _send_banner_fallback_text(
