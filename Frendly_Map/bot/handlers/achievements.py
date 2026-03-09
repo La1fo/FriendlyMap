@@ -18,9 +18,6 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         achievements_list = db.query(Achievement).order_by(Achievement.type, Achievement.id).all()
 
         lines = [
-            f"<b>{get_section_banner('achievements')['title']}</b>",
-            f"{get_section_banner('achievements')['description']}",
-            "",
             f"Сезон: <b>{current_season.key}</b>",
             "",
         ]
@@ -56,7 +53,7 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update,
         context,
         "achievements",
-        f"<b>{banner['title']}</b>\n{banner['description']}",
+        f"<b>{banner['title']}</b>",
     )
     await context.bot.send_message(
         chat_id=update.effective_user.id,

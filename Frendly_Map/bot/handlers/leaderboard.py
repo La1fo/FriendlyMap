@@ -16,9 +16,10 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]])
     banner = get_section_banner("leaderboard")
+    banner_caption = f"<b>{banner['title']}</b>"
 
     if not users:
-        await send_section_banner(update, context, "leaderboard", f"<b>{banner['title']}</b>\n{banner['description']}")
+        await send_section_banner(update, context, "leaderboard", banner_caption)
         await context.bot.send_message(
             chat_id=update.effective_user.id,
             text="Рейтинг пока пуст 🤷",
@@ -26,7 +27,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    lines = [f"<b>{banner['title']}</b>", banner["description"], "", "🏆 Таблица лидеров (pts):"]
+    lines = ["🏆 Таблица лидеров (pts):"]
     for idx, user in enumerate(users, start=1):
         name = user.username or user.first_name or "Без имени"
         rank_title = LeaderboardService.get_rank_title(user.pts)
@@ -42,10 +43,10 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🏷️ Твой ранг: {LeaderboardService.get_rank_title(current_user.pts)}",
         ])
 
-    await send_section_banner(update, context, "leaderboard", f"<b>{banner['title']}</b>\n{banner['description']}")
+    await send_section_banner(update, context, "leaderboard", banner_caption)
     await context.bot.send_message(
         chat_id=update.effective_user.id,
-        text="\n".join(lines[3:]),
+        text="\n".join(lines),
         reply_markup=back_kb,
     )
 
