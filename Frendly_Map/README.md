@@ -30,6 +30,11 @@ docker compose up --build
 - веб-приложение на `http://localhost:8000/map`
 - Telegram-бота
 
+### Важно для Docker
+- В `docker-compose.yml` webapp и bot автоматически используют `DB_URL` c хостом `db` (если `DB_URL` не задан во внешней среде).
+- Для открытия WebApp в Telegram укажите публичный HTTPS в `WEB_APP_URL` (например URL туннеля).
+- Если `WEB_APP_URL` не указан, по умолчанию используется `http://localhost:8000` (удобно только для локальной проверки в браузере, не в Telegram-клиенте).
+
 ## Переменные окружения
 
 - `BOT_TOKEN` — токен Telegram-бота (обязательно)

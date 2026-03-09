@@ -12,12 +12,14 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  app:
+  webapp:
     build: .
     restart: always
     env_file: .env
     depends_on:
       - db
+    environment:
+      DB_URL: ${DB_URL:-postgresql+psycopg2://user:password@db:5432/friendly_map}
     ports:
       - "8000:8000"
     command: uvicorn webapp.main:app --host 0.0.0.0 --port 8000
@@ -28,6 +30,10 @@ services:
     env_file: .env
     depends_on:
       - db
+      - webapp
+    environment:
+      DB_URL: ${DB_URL:-postgresql+psycopg2://user:password@db:5432/friendly_map}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8000}
     command: python -m bot.main
 
 volumes:
