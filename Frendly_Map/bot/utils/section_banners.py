@@ -102,7 +102,26 @@ async def send_section_banner(
         except Exception:
             pass
 
-    photo_path = _resolve_banner_photo_path(section)
+    try:
+        photo_path = _resolve_banner_photo_path(section)
+    except (FileNotFoundError, ValueError) as exc:
+        logger.exception("Failed to resolve section banner", exc_info=exc)
+        fallback_text = (
+            f"{caption}\n\n"
+            "⚠️ Баннер временно недоступен. "
+            "Проверьте локальные PNG-ассеты в bot/assets/sections/."
+        )
+        sent = await context.bot.send_message(
+            chat_id=chat_id,
+            text=fallback_text,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+        )
+        context.user_data["active_section_banner_message_id"] = sent.message_id
+        if store_message_key:
+            context.user_data[store_message_key] = sent.message_id
+        return sent
+
     with photo_path.open("rb") as media:
         sent = await context.bot.send_photo(
             chat_id=chat_id,
