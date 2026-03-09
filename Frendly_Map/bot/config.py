@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     # Администраторы (через запятую)
     ADMIN_IDS: str = ""
 
-    # Web App
+    # Web App (для Telegram нужен публичный HTTPS base URL; localhost только для backend-локалки)
     WEB_APP_URL: str = "http://localhost:8000"
 
     # Seed sample users for leaderboard (dev only)

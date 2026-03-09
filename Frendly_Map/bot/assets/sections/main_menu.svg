@@ -1,0 +1,36 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="90" y1="40" x2="1120" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F9FDFF"/>
+      <stop offset="1" stop-color="#EAF7FF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="470" y1="190" x2="760" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8DD9FF"/>
+      <stop offset="1" stop-color="#41B6F6"/>
+    </linearGradient>
+    <filter id="softShadow" x="0" y="0" width="1200" height="630" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#6DBFE8" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect x="18" y="18" width="1164" height="594" rx="36" fill="url(#bg)" stroke="#BFE8FF"/>
+  <path d="M160 462C270 420 352 454 458 418C558 385 642 302 784 312C884 320 963 372 1042 356"
+        stroke="#B9E8FF" stroke-width="10" stroke-linecap="round" opacity="0.7"/>
+  <path d="M178 372C286 337 389 362 476 330C574 294 655 232 780 236C887 240 958 278 1038 260"
+        stroke="#D2F1FF" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
+
+  <circle cx="338" cy="290" r="14" fill="#6AC8F9"/>
+  <circle cx="432" cy="372" r="10" fill="#9EDFFF"/>
+  <circle cx="830" cy="226" r="12" fill="#7CCFFB"/>
+  <circle cx="942" cy="316" r="9" fill="#AEE6FF"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="420" y="104" width="360" height="422" rx="32" fill="#FFFFFF" stroke="#C7EDFF"/>
+    <path d="M600 194C546 194 502 237 502 290C502 356 600 453 600 453C600 453 698 356 698 290C698 237 654 194 600 194Z" fill="url(#accent)"/>
+    <circle cx="600" cy="290" r="38" fill="#FFFFFF" opacity="0.92"/>
+    <circle cx="600" cy="290" r="18" fill="#71CDFB"/>
+    <rect x="482" y="140" width="236" height="28" rx="14" fill="#E8F7FF"/>
+    <rect x="482" y="478" width="170" height="16" rx="8" fill="#E4F4FF"/>
+    <rect x="666" y="478" width="52" height="16" rx="8" fill="#CDEBFF"/>
+  </g>
+</svg>

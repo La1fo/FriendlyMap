@@ -1,87 +1,398 @@
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
-    MessageHandler, CommandHandler, ConversationHandler,
-    ContextTypes, filters
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters,
 )
-from bot.database import get_db_context
-from bot.services.location_service import LocationService
-from bot.services.achievements_manager import AchievementsManager
-from bot.utils.users import get_or_create_user
 
-ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_PHOTO, CONFIRM = range(5)
+from bot.database import get_db_context
+from bot.keyboards.main_menu import get_main_menu
+from bot.models.tag import Tag
+from bot.services.achievements_manager import AchievementsManager
+from bot.services.location_service import LocationService
+from bot.utils.users import get_or_create_user
+from bot.utils.webapp import build_webapp_url
+
+ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_TAG_CATEGORY, ASK_TAG_PICK, ASK_PHOTO, CONFIRM = range(7)
+
+CB_CANCEL = "addloc_cancel"
+CB_SKIP_DESC = "addloc_skip_desc"
+CB_SKIP_PHOTO = "addloc_skip_photo"
+CB_CONFIRM = "addloc_confirm"
+CB_TAG_CAT = "addloc_tag_cat_"
+CB_TAG_TOGGLE = "addloc_tag_toggle_"
+CB_TAG_DONE = "addloc_tag_done"
+CB_TAG_SKIP = "addloc_tag_skip"
+CB_TAG_CLEAR = "addloc_tag_clear"
+CB_TAG_BACK = "addloc_tag_back"
+
+MAX_SELECTED_TAGS = 5
+TAG_CATALOG = {
+    "Еда": ["кафе", "ресторан", "бар", "фастфуд", "пекарня"],
+    "Отдых": ["парк", "лес", "озеро", "река", "пляж", "смотровая площадка", "место для прогулки"],
+    "Город": ["магазин", "рынок", "торговый центр", "спортзал", "коворкинг", "библиотека", "учебное место"],
+    "Культура": ["историческое место", "памятник", "музей", "архитектура", "церковь", "заброшенное", "культурное место"],
+    "Развлечения": ["кино", "клуб", "концертная площадка", "арт-пространство", "игровое место", "мероприятие", "ночное место"],
+    "Атмосфера": ["тихое", "уютное", "популярное", "скрытое", "туристическое", "фотогеничное"],
+    "Активности": ["прогулка", "пикник", "работа", "свидание", "спорт", "фотосъёмка", "отдых"],
+    "Доступность": ["бесплатно", "платно", "круглосуточно", "семейное место", "подходит для детей", "можно с животными"],
+}
+
+
+def _cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)]])
+
+
+def _description_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⏭ Пропустить описание", callback_data=CB_SKIP_DESC)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+
+
+def _location_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map")})],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+
+
+def _photo_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⏭ Пропустить фото", callback_data=CB_SKIP_PHOTO)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+
+
+def _confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ Подтвердить", callback_data=CB_CONFIRM)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+
+
+def _get_selected_tag_ids(context: ContextTypes.DEFAULT_TYPE) -> set[int]:
+    return set(context.user_data.get("selected_tag_ids", []))
+
+
+def _set_selected_tag_ids(context: ContextTypes.DEFAULT_TYPE, tag_ids: set[int]) -> None:
+    context.user_data["selected_tag_ids"] = list(tag_ids)
+
+
+def _tag_categories_keyboard(selected_count: int) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(category, callback_data=f"{CB_TAG_CAT}{category}")] for category in TAG_CATALOG]
+    rows.extend(
+        [
+            [InlineKeyboardButton(f"✅ Готово ({selected_count}/{MAX_SELECTED_TAGS})", callback_data=CB_TAG_DONE)],
+            [InlineKeyboardButton("🧹 Очистить всё", callback_data=CB_TAG_CLEAR)],
+            [InlineKeyboardButton("⏭ Пропустить", callback_data=CB_TAG_SKIP)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _tag_pick_keyboard(category: str, tags: list[Tag], selected_ids: set[int]) -> InlineKeyboardMarkup:
+    rows = []
+    for tag in tags:
+        selected_mark = "✅ " if tag.id in selected_ids else ""
+        rows.append([InlineKeyboardButton(f"{selected_mark}{tag.name}", callback_data=f"{CB_TAG_TOGGLE}{tag.id}")])
+
+    rows.extend(
+        [
+            [InlineKeyboardButton("◀️ Назад к категориям", callback_data=CB_TAG_BACK)],
+            [InlineKeyboardButton("✅ Готово", callback_data=CB_TAG_DONE)],
+            [InlineKeyboardButton("🧹 Очистить всё", callback_data=CB_TAG_CLEAR)],
+            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def _clear_flow_data(context: ContextTypes.DEFAULT_TYPE) -> None:
+    for key in (
+        "loc_name",
+        "loc_description",
+        "latitude",
+        "longitude",
+        "photos",
+        "selected_tag_ids",
+        "current_tag_category",
+        "add_location_message_id",
+    ):
+        context.user_data.pop(key, None)
+
+
+async def _delete_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
+    except Exception:
+        pass
+
+
+async def _render_flow_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text_value: str,
+    reply_markup: InlineKeyboardMarkup,
+) -> None:
+    chat_id = update.effective_user.id
+    message_id = context.user_data.get("add_location_message_id")
+
+    if update.callback_query and not message_id:
+        message_id = update.callback_query.message.message_id
+        context.user_data["add_location_message_id"] = message_id
+
+    if message_id:
+        try:
+            await context.bot.edit_message_text(text_value, chat_id=chat_id, message_id=message_id, reply_markup=reply_markup)
+            return
+        except BadRequest as exc:
+            if "Message is not modified" in str(exc):
+                return
+            if "message to edit not found" not in str(exc).lower():
+                raise
+
+    source = update.callback_query.message if update.callback_query else update.message
+    sent = await source.reply_text(text_value, reply_markup=reply_markup)
+    context.user_data["add_location_message_id"] = sent.message_id
+
+
+async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_user.id
+    menu_id = context.user_data.get("main_menu_message_id")
+    if menu_id:
+        try:
+            await context.bot.edit_message_text("Главное меню:", chat_id=chat_id, message_id=menu_id, reply_markup=get_main_menu(chat_id))
+            return
+        except BadRequest:
+            pass
+
+    sent = await context.bot.send_message(chat_id=chat_id, text="Главное меню:", reply_markup=get_main_menu(chat_id))
+    context.user_data["main_menu_message_id"] = sent.message_id
+
+
+async def _render_tag_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    selected_ids = _get_selected_tag_ids(context)
+    text = (
+        "🏷️ Выбери категорию тегов\n"
+        f"Выбрано: {len(selected_ids)}/{MAX_SELECTED_TAGS}.\n"
+        "Можно выбирать теги из нескольких категорий."
+    )
+    await _render_flow_message(update, context, text, _tag_categories_keyboard(len(selected_ids)))
+    return ASK_TAG_CATEGORY
+
+
+async def _render_category_tags(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str) -> int:
+    selected_ids = _get_selected_tag_ids(context)
+    with get_db_context() as db:
+        tags = db.query(Tag).filter(Tag.category == category).order_by(Tag.name.asc()).all()
+
+    context.user_data["current_tag_category"] = category
+    text = (
+        f"📂 Категория: {category}\n"
+        f"Выбрано всего: {len(selected_ids)}/{MAX_SELECTED_TAGS}\n"
+        "Нажми на тег, чтобы выбрать/снять выбор."
+    )
+    await _render_flow_message(update, context, text, _tag_pick_keyboard(category, tags, selected_ids))
+    return ASK_TAG_PICK
+
+
+async def _proceed_to_photo_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await _render_flow_message(
+        update,
+        context,
+        "📷 Отправь фото места (можно несколько) или пропусти шаг.",
+        _photo_keyboard(),
+    )
+    return ASK_PHOTO
+
 
 async def start_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📍 Введи название локации:")
+    _clear_flow_data(context)
+    if update.callback_query:
+        await update.callback_query.answer()
+    await _render_flow_message(update, context, "📍 Введи название локации:", _cancel_keyboard())
     return ASK_NAME
+
 
 async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["loc_name"] = update.message.text.strip()
-    await update.message.reply_text("✏️ Напиши краткое описание (или - для пропуска):")
+    await _delete_user_message(update, context)
+    await _render_flow_message(update, context, "✏️ Напиши краткое описание:", _description_keyboard())
     return ASK_DESCRIPTION
 
-async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    desc = update.message.text.strip()
-    context.user_data["loc_description"] = None if desc == "-" else desc
 
-    kb = ReplyKeyboardMarkup(
-        [[KeyboardButton("📡 Отправить геопозицию", request_location=True)]],
-        resize_keyboard=True
-    )
-    await update.message.reply_text(
-        "📌 Отправь локацию через кнопку ниже:",
-        reply_markup=kb
+async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["loc_description"] = update.message.text.strip()
+    await _delete_user_message(update, context)
+    await _render_flow_message(
+        update,
+        context,
+        "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
+        _location_keyboard(),
     )
     return ASK_LOCATION
 
+
+async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    context.user_data["loc_description"] = None
+    await _render_flow_message(
+        update,
+        context,
+        "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
+        _location_keyboard(),
+    )
+    return ASK_LOCATION
+
+
 async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.location:
-        await update.message.reply_text("⚠️ Это не похоже на геопозицию, попробуй еще раз")
+        await _delete_user_message(update, context)
+        await _render_flow_message(
+            update,
+            context,
+            "⚠️ Нужна геопозиция. Открой карту, выбери точку и отправь её.",
+            _location_keyboard(),
+        )
         return ASK_LOCATION
 
     loc = update.message.location
     context.user_data["latitude"] = loc.latitude
     context.user_data["longitude"] = loc.longitude
+    await _delete_user_message(update, context)
 
-    await update.message.reply_text(
-        "📷 Отправь фото места (или напиши `готово` чтобы продолжить)",
-        reply_markup=ReplyKeyboardMarkup([["готово"]], resize_keyboard=True)
-    )
-    return ASK_PHOTO
+    with get_db_context() as db:
+        LocationService.ensure_tags(db, TAG_CATALOG)
+
+    return await _render_tag_categories(update, context)
+
+
+async def open_tag_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    category = query.data.replace(CB_TAG_CAT, "", 1)
+    if category not in TAG_CATALOG:
+        await query.answer("Категория не найдена", show_alert=True)
+        return ASK_TAG_CATEGORY
+    return await _render_category_tags(update, context, category)
+
+
+async def toggle_tag(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    tag_id = int(query.data.replace(CB_TAG_TOGGLE, "", 1))
+    selected = _get_selected_tag_ids(context)
+
+    if tag_id in selected:
+        selected.remove(tag_id)
+    else:
+        if len(selected) >= MAX_SELECTED_TAGS:
+            await query.answer(f"Можно выбрать не более {MAX_SELECTED_TAGS} тегов", show_alert=True)
+            return ASK_TAG_PICK
+        selected.add(tag_id)
+
+    _set_selected_tag_ids(context, selected)
+    category = context.user_data.get("current_tag_category")
+    if not category:
+        return await _render_tag_categories(update, context)
+    return await _render_category_tags(update, context, category)
+
+
+async def tags_back_to_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    return await _render_tag_categories(update, context)
+
+
+async def tags_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    return await _proceed_to_photo_step(update, context)
+
+
+async def tags_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    context.user_data["selected_tag_ids"] = []
+    return await _proceed_to_photo_step(update, context)
+
+
+async def tags_clear_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer("Выбор тегов очищен")
+    context.user_data["selected_tag_ids"] = []
+    category = context.user_data.get("current_tag_category")
+    if category and update.callback_query.message and "Категория:" in update.callback_query.message.text:
+        return await _render_category_tags(update, context, category)
+    return await _render_tag_categories(update, context)
+
 
 async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text and update.message.text.lower() == "готово":
-        return await confirm(update, context)
-
     if update.message.photo:
         file_id = update.message.photo[-1].file_id
         context.user_data.setdefault("photos", []).append(file_id)
-        await update.message.reply_text("Фото добавлено 📸 (ещё или напиши `готово`)")
+        await _delete_user_message(update, context)
+        await _render_flow_message(
+            update,
+            context,
+            f"📷 Фото добавлено: {len(context.user_data.get('photos', []))}. Можно отправить ещё или пропустить.",
+            _photo_keyboard(),
+        )
         return ASK_PHOTO
 
-    await update.message.reply_text("Отправь фото или `готово`")
+    await _delete_user_message(update, context)
+    await _render_flow_message(update, context, "⚠️ Отправь фото или нажми «Пропустить фото».", _photo_keyboard())
     return ASK_PHOTO
 
+
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.answer()
+
     d = context.user_data
+    selected_ids = _get_selected_tag_ids(context)
+    tag_line = "—"
+    if selected_ids:
+        with get_db_context() as db:
+            tags = db.query(Tag).filter(Tag.id.in_(selected_ids)).order_by(Tag.category.asc(), Tag.name.asc()).all()
+            tag_line = ", ".join(f"{t.name} ({t.category})" for t in tags) if tags else "—"
 
     msg = (
-        f"🧾 **Проверка данных:**\n"
+        "🧾 Проверь данные:\n"
         f"🏷 Название: {d['loc_name']}\n"
         f"✏️ Описание: {d.get('loc_description') or '—'}\n"
         f"🌍 Координаты: {d['latitude']}, {d['longitude']}\n"
+        f"🏷️ Теги: {tag_line}\n"
         f"📷 Фото: {len(d.get('photos', []))}\n\n"
-        f"Напиши `да` для сохранения или `нет` для отмены"
+        "Подтвердить отправку?"
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await _render_flow_message(update, context, msg, _confirm_keyboard())
     return CONFIRM
 
+
+async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await confirm(update, context)
+
+
 async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text.lower() != "да":
-        await update.message.reply_text("❌ Добавление отменено")
-        return ConversationHandler.END
+    if update.callback_query:
+        await update.callback_query.answer()
 
     user = update.effective_user
     d = context.user_data
+    selected_ids = list(_get_selected_tag_ids(context))
     achievements = AchievementsManager()
 
     with get_db_context() as db:
@@ -92,43 +403,77 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name=d["loc_name"],
             latitude=d["latitude"],
             longitude=d["longitude"],
-            description=d.get("loc_description")
+            description=d.get("loc_description"),
         )
-
+        if selected_ids:
+            LocationService.add_tags_by_ids(db, loc.id, selected_ids)
         for i, file_id in enumerate(d.get("photos", [])):
             LocationService.add_photo(db, loc.id, file_id, order_index=i)
+        achievements.apply_event(db, user.id, "location_submitted", 1)
 
-        completed = achievements.apply_event(db, user.id, "location_submitted", 1)
+    flow_message_id = context.user_data.get("add_location_message_id")
+    if flow_message_id:
+        try:
+            await context.bot.delete_message(chat_id=user.id, message_id=flow_message_id)
+        except Exception:
+            pass
 
-    await update.message.reply_text(
-        "🎉 Локация отправлена на модерацию!\n"
-        "После одобрения ты получишь баллы 💎"
-    )
-    if completed:
-        await update.message.reply_text(achievements.format_completion_message(completed))
-    context.user_data.clear()
+    _clear_flow_data(context)
+    await _show_main_menu(update, context)
     return ConversationHandler.END
+
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Отменено ❌")
-    context.user_data.clear()
+    if update.callback_query:
+        await update.callback_query.answer("Добавление отменено")
+
+    flow_message_id = context.user_data.get("add_location_message_id")
+    if flow_message_id:
+        try:
+            await context.bot.delete_message(chat_id=update.effective_user.id, message_id=flow_message_id)
+        except Exception:
+            pass
+
+    _clear_flow_data(context)
+    await _show_main_menu(update, context)
     return ConversationHandler.END
+
 
 add_location_handler = ConversationHandler(
     entry_points=[
         CommandHandler("add", start_add),
         MessageHandler(filters.Regex("^(➕ Добавить|add)$"), start_add),
+        CallbackQueryHandler(start_add, pattern="^add_location$"),
     ],
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_description)],
-        ASK_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords)],
+        ASK_DESCRIPTION: [
+            CallbackQueryHandler(skip_description, pattern=f"^{CB_SKIP_DESC}$"),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
+        ],
         ASK_LOCATION: [MessageHandler(filters.LOCATION, get_coords)],
+        ASK_TAG_CATEGORY: [
+            CallbackQueryHandler(open_tag_category, pattern=f"^{CB_TAG_CAT}"),
+            CallbackQueryHandler(tags_done, pattern=f"^{CB_TAG_DONE}$"),
+            CallbackQueryHandler(tags_skip, pattern=f"^{CB_TAG_SKIP}$"),
+            CallbackQueryHandler(tags_clear_all, pattern=f"^{CB_TAG_CLEAR}$"),
+        ],
+        ASK_TAG_PICK: [
+            CallbackQueryHandler(toggle_tag, pattern=f"^{CB_TAG_TOGGLE}"),
+            CallbackQueryHandler(tags_back_to_categories, pattern=f"^{CB_TAG_BACK}$"),
+            CallbackQueryHandler(tags_done, pattern=f"^{CB_TAG_DONE}$"),
+            CallbackQueryHandler(tags_clear_all, pattern=f"^{CB_TAG_CLEAR}$"),
+        ],
         ASK_PHOTO: [
+            CallbackQueryHandler(skip_photo, pattern=f"^{CB_SKIP_PHOTO}$"),
             MessageHandler(filters.PHOTO, collect_photo),
             MessageHandler(filters.TEXT & ~filters.COMMAND, collect_photo),
         ],
-        CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, save)],
+        CONFIRM: [CallbackQueryHandler(save, pattern=f"^{CB_CONFIRM}$")],
     },
-    fallbacks=[CommandHandler("cancel", cancel)],
-    allow_reentry=True
+    fallbacks=[
+        CommandHandler("cancel", cancel),
+        CallbackQueryHandler(cancel, pattern=f"^{CB_CANCEL}$"),
+    ],
+    allow_reentry=True,
 )

@@ -1,0 +1,31 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="70" y1="38" x2="1118" y2="626" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F9FDFF"/>
+      <stop offset="1" stop-color="#E8F6FF"/>
+    </linearGradient>
+    <linearGradient id="top" x1="553" y1="208" x2="647" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#99DEFF"/>
+      <stop offset="1" stop-color="#43B6F4"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="18" y="18" width="1164" height="594" rx="36" fill="url(#bg)" stroke="#BDE8FF"/>
+  <rect x="172" y="92" width="856" height="446" rx="32" fill="#FFFFFF" stroke="#CDEEFF"/>
+
+  <rect x="336" y="360" width="152" height="122" rx="20" fill="#DDF3FF"/>
+  <rect x="524" y="282" width="152" height="200" rx="20" fill="url(#top)"/>
+  <rect x="712" y="330" width="152" height="152" rx="20" fill="#C8EBFF"/>
+
+  <circle cx="412" cy="336" r="32" fill="#EEF9FF" stroke="#C9EBFF"/>
+  <circle cx="600" cy="252" r="36" fill="#ECF8FF" stroke="#BFE8FF"/>
+  <circle cx="788" cy="302" r="30" fill="#EEF9FF" stroke="#CAEFFF"/>
+
+  <text x="404" y="345" text-anchor="middle" fill="#67C4F6" font-family="Arial, sans-serif" font-size="22" font-weight="700">2</text>
+  <text x="600" y="262" text-anchor="middle" fill="#42B3F1" font-family="Arial, sans-serif" font-size="24" font-weight="700">1</text>
+  <text x="780" y="310" text-anchor="middle" fill="#6FC9F8" font-family="Arial, sans-serif" font-size="22" font-weight="700">3</text>
+
+  <path d="M294 234L384 186L472 220L560 170L652 218L748 158L860 198" stroke="#9BDFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="748" cy="158" r="12" fill="#4ABAF5"/>
+  <rect x="300" y="500" width="560" height="14" rx="7" fill="#DCEFFF"/>
+</svg>

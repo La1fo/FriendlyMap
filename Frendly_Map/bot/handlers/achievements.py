@@ -1,10 +1,11 @@
 import json
-from telegram import Update
-from telegram.ext import CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot.database import get_db_context
 from bot.models.achievement import Achievement
 from bot.services.achievements_manager import AchievementsManager
+from bot.utils.section_banners import get_section_banner, send_section_banner
 
 
 async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,9 +18,11 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         achievements_list = db.query(Achievement).order_by(Achievement.type, Achievement.id).all()
 
         lines = [
-            "🏆 <b>Достижения</b>",
+            f"<b>{get_section_banner('achievements')['title']}</b>",
+            f"{get_section_banner('achievements')['description']}",
+            "",
             f"Сезон: <b>{current_season.key}</b>",
-            ""
+            "",
         ]
 
         type_labels = {"ranked": "ранговое", "standard": "стандартное"}
@@ -47,7 +50,20 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             lines.append("")
 
-    await update.message.reply_text("\n".join(lines).strip(), parse_mode="HTML")
+    back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]])
+    banner = get_section_banner("achievements")
+    await send_section_banner(
+        update,
+        context,
+        "achievements",
+        f"<b>{banner['title']}</b>\n{banner['description']}",
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_user.id,
+        text="\n".join(lines).strip(),
+        parse_mode="HTML",
+        reply_markup=back_kb,
+    )
 
 
 def _get_target(achievement: Achievement) -> int:
@@ -60,3 +76,4 @@ def _get_target(achievement: Achievement) -> int:
 
 achievements_handler = CommandHandler("achievements", achievements)
 achievements_menu_handler = MessageHandler(filters.Regex("^(🏆 Достижения|achievements)$"), achievements)
+achievements_callback_handler = CallbackQueryHandler(achievements, pattern="^achievements$")
