@@ -1,38 +1,32 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot.database import get_db_context
 from bot.models.user import User
 from bot.services.leaderboard_service import LeaderboardService
+from bot.utils.section_banners import get_section_banner, send_section_banner
 
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        chat = update.callback_query.message
-    else:
-        chat = update.message
-
     with get_db_context() as db:
         LeaderboardService.ensure_sample_users(db)
         users = LeaderboardService.get_top_users(db, limit=10)
         position, total = LeaderboardService.get_user_position(db, update.effective_user.id)
         current_user = db.get(User, update.effective_user.id)
 
+    back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]])
+    banner = get_section_banner("leaderboard")
+
     if not users:
-        back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]
-        ])
-        if update.callback_query:
-            await update.callback_query.edit_message_text(
-                "Рейтинг пока пуст 🤷",
-                reply_markup=back_kb
-            )
-        else:
-            await chat.reply_text("Рейтинг пока пуст 🤷", reply_markup=back_kb)
+        await send_section_banner(update, context, "leaderboard", f"<b>{banner['title']}</b>\n{banner['description']}")
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text="Рейтинг пока пуст 🤷",
+            reply_markup=back_kb,
+        )
         return
 
-    lines = ["🏆 Таблица лидеров (pts):"]
+    lines = [f"<b>{banner['title']}</b>", banner["description"], "", "🏆 Таблица лидеров (pts):"]
     for idx, user in enumerate(users, start=1):
         name = user.username or user.first_name or "Без имени"
         rank_title = LeaderboardService.get_rank_title(user.pts)
@@ -48,14 +42,12 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🏷️ Твой ранг: {LeaderboardService.get_rank_title(current_user.pts)}",
         ])
 
-    back_kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]
-    ])
-    message = "\n".join(lines)
-    if update.callback_query:
-        await update.callback_query.edit_message_text(message, reply_markup=back_kb)
-    else:
-        await chat.reply_text(message, reply_markup=back_kb)
+    await send_section_banner(update, context, "leaderboard", f"<b>{banner['title']}</b>\n{banner['description']}")
+    await context.bot.send_message(
+        chat_id=update.effective_user.id,
+        text="\n".join(lines[3:]),
+        reply_markup=back_kb,
+    )
 
 
 leaderboard_handler = CommandHandler("leaderboard", leaderboard)

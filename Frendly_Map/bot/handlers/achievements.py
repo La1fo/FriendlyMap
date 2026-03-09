@@ -1,19 +1,14 @@
 import json
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot.database import get_db_context
 from bot.models.achievement import Achievement
 from bot.services.achievements_manager import AchievementsManager
+from bot.utils.section_banners import get_section_banner, send_section_banner
 
 
 async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        chat = update.callback_query.message
-    else:
-        chat = update.message
-
     user_id = update.effective_user.id
     manager = AchievementsManager()
 
@@ -23,9 +18,11 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         achievements_list = db.query(Achievement).order_by(Achievement.type, Achievement.id).all()
 
         lines = [
-            "🏆 <b>Достижения</b>",
+            f"<b>{get_section_banner('achievements')['title']}</b>",
+            f"{get_section_banner('achievements')['description']}",
+            "",
             f"Сезон: <b>{current_season.key}</b>",
-            ""
+            "",
         ]
 
         type_labels = {"ranked": "ранговое", "standard": "стандартное"}
@@ -53,18 +50,20 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             lines.append("")
 
-    back_kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]
-    ])
-    message = "\n".join(lines).strip()
-    if update.callback_query:
-        await update.callback_query.edit_message_text(
-            message,
-            parse_mode="HTML",
-            reply_markup=back_kb
-        )
-    else:
-        await chat.reply_text(message, parse_mode="HTML", reply_markup=back_kb)
+    back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]])
+    banner = get_section_banner("achievements")
+    await send_section_banner(
+        update,
+        context,
+        "achievements",
+        f"<b>{banner['title']}</b>\n{banner['description']}",
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_user.id,
+        text="\n".join(lines).strip(),
+        parse_mode="HTML",
+        reply_markup=back_kb,
+    )
 
 
 def _get_target(achievement: Achievement) -> int:

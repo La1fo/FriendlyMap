@@ -14,6 +14,7 @@ from telegram.ext import (
 from bot.database import get_db_context
 from bot.models.faq_entry import FaqEntry
 from bot.utils.common import is_admin
+from bot.utils.section_banners import get_section_banner, send_section_banner
 
 ASK_QUESTION, ASK_ANSWER, EDIT_QUESTION, EDIT_ANSWER = range(4)
 
@@ -39,28 +40,29 @@ def _render_faq_text(entries: list[FaqEntry]) -> str:
 
 
 async def show_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        user_id = update.effective_user.id
-    else:
-        user_id = update.effective_user.id
+    user_id = update.effective_user.id
 
     with get_db_context() as db:
         entries = db.query(FaqEntry).order_by(FaqEntry.id.asc()).all()
 
-    if not entries:
-        text = "❓ Пока нет вопросов в FAQ."
-        if update.callback_query:
-            await update.callback_query.edit_message_text(text, reply_markup=_faq_keyboard(user_id))
-        else:
-            await update.message.reply_text(text, reply_markup=_faq_keyboard(user_id))
-        return
+    banner = get_section_banner("faq")
+    banner_caption = f"<b>{banner['title']}</b>\n{banner['description']}"
+    await send_section_banner(
+        update,
+        context,
+        "faq",
+        banner_caption,
+        delete_origin=True,
+    )
 
-    text = _render_faq_text(entries)
-    if update.callback_query:
-        await update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_faq_keyboard(user_id))
-    else:
-        await update.message.reply_text(text, parse_mode="HTML", reply_markup=_faq_keyboard(user_id))
+    text = _render_faq_text(entries) if entries else "❓ Пока нет вопросов в FAQ."
+    sent = await context.bot.send_message(
+        chat_id=user_id,
+        text=text,
+        parse_mode="HTML" if entries else None,
+        reply_markup=_faq_keyboard(user_id),
+    )
+    context.user_data["faq_menu_message_id"] = sent.message_id
 
 
 async def start_add_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):

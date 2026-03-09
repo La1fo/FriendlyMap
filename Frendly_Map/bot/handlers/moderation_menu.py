@@ -16,6 +16,7 @@ from bot.models.location import Location
 from bot.models.photo import Photo
 from bot.models.user import User
 from bot.utils.common import is_admin
+from bot.utils.section_banners import get_section_banner, send_section_banner
 
 POINTS_ACTION, POINTS_TYPE, POINTS_SELECT_USER, POINTS_AMOUNT, POINTS_CUSTOM = range(5)
 DEL_SELECT = 5
@@ -90,34 +91,42 @@ async def _render_points_users(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def _show_moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     menu_message_id = context.user_data.get("moderation_menu_message_id")
+    text_value = "⚙️ Панель модерации:"
     if menu_message_id:
         await context.bot.edit_message_text(
-            "⚙️ Панель модерации:",
+            text_value,
             chat_id=update.effective_user.id,
             message_id=menu_message_id,
             reply_markup=_moderation_keyboard()
         )
     else:
-        sent = await (update.message or update.callback_query.message).reply_text(
-            "⚙️ Панель модерации:",
+        sent = await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=text_value,
             reply_markup=_moderation_keyboard()
         )
         context.user_data["moderation_menu_message_id"] = sent.message_id
 
 
 async def moderation_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await update.callback_query.answer()
-        chat = update.callback_query.message
-    else:
-        chat = update.message
-
     if not _ensure_admin(update):
+        chat = update.callback_query.message if update.callback_query else update.message
+        if update.callback_query:
+            await update.callback_query.answer()
         await chat.reply_text("⛔ Только для модераторов.")
         return
 
-    if update.callback_query:
-        context.user_data["moderation_menu_message_id"] = update.callback_query.message.message_id
+    banner = get_section_banner("moderation")
+    banner_caption = f"<b>{banner['title']}</b>\n{banner['description']}"
+    await send_section_banner(
+        update,
+        context,
+        "moderation",
+        banner_caption,
+        delete_origin=True,
+    )
+
+    context.user_data.pop("moderation_menu_message_id", None)
     await _show_moderation_menu(update, context)
 
 

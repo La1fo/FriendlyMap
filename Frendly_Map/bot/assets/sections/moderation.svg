@@ -1,0 +1,30 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="70" y1="40" x2="1132" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F9FDFF"/>
+      <stop offset="1" stop-color="#E7F6FF"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="520" y1="188" x2="680" y2="456" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9EE0FF"/>
+      <stop offset="1" stop-color="#3FAFEE"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="18" y="18" width="1164" height="594" rx="36" fill="url(#bg)" stroke="#BFE8FF"/>
+  <rect x="186" y="92" width="828" height="446" rx="32" fill="#FFFFFF" stroke="#CDEEFF"/>
+
+  <rect x="264" y="156" width="256" height="44" rx="14" fill="#E8F6FF"/>
+  <rect x="264" y="220" width="220" height="26" rx="13" fill="#EAF8FF"/>
+  <rect x="264" y="260" width="236" height="26" rx="13" fill="#EAF8FF"/>
+  <rect x="264" y="300" width="190" height="26" rx="13" fill="#EAF8FF"/>
+
+  <path d="M600 174L724 220V324C724 398 674 458 600 486C526 458 476 398 476 324V220L600 174Z" fill="url(#shield)"/>
+  <path d="M600 212L686 244V322C686 376 652 421 600 446C548 421 514 376 514 322V244L600 212Z" fill="#FFFFFF" opacity="0.93"/>
+  <path d="M569 326L593 350L637 294" stroke="#55BDF2" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="744" y="226" width="186" height="138" rx="22" fill="#F3FBFF" stroke="#D6F1FF"/>
+  <circle cx="786" cy="270" r="12" fill="#8BD6FB"/>
+  <rect x="812" y="260" width="94" height="18" rx="9" fill="#D8F2FF"/>
+  <circle cx="786" cy="314" r="12" fill="#8BD6FB"/>
+  <rect x="812" y="304" width="84" height="18" rx="9" fill="#D8F2FF"/>
+</svg>
