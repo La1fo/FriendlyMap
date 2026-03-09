@@ -1,0 +1,29 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="66" y1="32" x2="1115" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FAFEFF"/>
+      <stop offset="1" stop-color="#E8F6FF"/>
+    </linearGradient>
+    <linearGradient id="medal" x1="534" y1="154" x2="690" y2="388" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A3E3FF"/>
+      <stop offset="1" stop-color="#47B8F4"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="18" y="18" width="1164" height="594" rx="36" fill="url(#bg)" stroke="#BFE9FF"/>
+  <rect x="212" y="86" width="776" height="458" rx="32" fill="#FFFFFF" stroke="#CCEFFF"/>
+
+  <path d="M510 138H566V232L538 262L510 232V138Z" fill="#AEE7FF"/>
+  <path d="M634 138H690V232L662 262L634 232V138Z" fill="#87D7FC"/>
+  <circle cx="600" cy="314" r="112" fill="url(#medal)"/>
+  <circle cx="600" cy="314" r="84" fill="#FFFFFF" opacity="0.9"/>
+  <path d="M600 257L616 292H654L624 315L637 354L600 332L563 354L576 315L546 292H584L600 257Z" fill="#66C7F8"/>
+
+  <rect x="330" y="458" width="540" height="20" rx="10" fill="#E2F4FF"/>
+  <rect x="330" y="490" width="380" height="14" rx="7" fill="#D1EEFF"/>
+
+  <circle cx="356" cy="194" r="8" fill="#93DCFF"/>
+  <circle cx="844" cy="212" r="11" fill="#7ED1FB"/>
+  <circle cx="842" cy="402" r="7" fill="#AEDFFF"/>
+  <circle cx="360" cy="412" r="10" fill="#C9ECFF"/>
+</svg>

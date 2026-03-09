@@ -1,0 +1,32 @@
+{
+  "main_menu": {
+    "title": "Главное меню",
+    "description": "Открывай карту, находи интересные места и управляй всеми разделами в одном экране.",
+    "asset": "/static/assets/menu/main_menu.svg"
+  },
+  "profile": {
+    "title": "Профиль",
+    "description": "Смотри свой прогресс, баллы и личную статистику по активности в Friendly Map.",
+    "asset": "/static/assets/menu/profile.svg"
+  },
+  "achievements": {
+    "title": "Достижения",
+    "description": "Закрывай цели, собирай награды и отслеживай свой путь к новым достижениям.",
+    "asset": "/static/assets/menu/achievements.svg"
+  },
+  "leaderboard": {
+    "title": "Таблица лидеров",
+    "description": "Сравнивай результаты, поднимайся в рейтинге и смотри, кто сейчас в топе.",
+    "asset": "/static/assets/menu/leaderboard.svg"
+  },
+  "faq": {
+    "title": "FAQ",
+    "description": "Быстрые ответы на частые вопросы, чтобы сразу разобраться в работе бота.",
+    "asset": "/static/assets/menu/faq.svg"
+  },
+  "moderation": {
+    "title": "Модерация",
+    "description": "Проверяй локации и управляй качеством контента через удобные инструменты контроля.",
+    "asset": "/static/assets/menu/moderation.svg"
+  }
+}
