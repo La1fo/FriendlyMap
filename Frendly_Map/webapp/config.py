@@ -1,5 +1,5 @@
 # webapp/config.py
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -10,9 +10,11 @@ class Settings(BaseSettings):
     DEFAULT_MAP_LNG: float = 37.618423
     DEFAULT_MAP_ZOOM: int = 11
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()
