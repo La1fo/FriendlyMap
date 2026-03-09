@@ -1,14 +1,11 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes, MessageHandler, CallbackQueryHandler, filters
 
-from bot.config import settings
+from bot.utils.webapp import get_map_web_app_info, webapp_url_diagnostics
 
 
 def _build_map_keyboard() -> InlineKeyboardMarkup:
-    base_url = settings.WEB_APP_URL.rstrip("/")
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": f"{base_url}/map"})]]
-    )
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🗺️ Открыть карту", web_app=get_map_web_app_info())]])
 
 
 async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,6 +14,11 @@ async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat = update.callback_query.message
     else:
         chat = update.message
+
+
+    ok, message = webapp_url_diagnostics()
+    if not ok:
+        await chat.reply_text(f"⚠️ {message}")
 
     await chat.reply_text(
         "Открываю карту Friendly Map!", reply_markup=_build_map_keyboard()

@@ -5,6 +5,7 @@ from .config import settings
 from .database import init_db, get_db_context
 from .handlers import get_all_handlers
 from .services.achievements_manager import AchievementsManager
+from .utils.webapp import webapp_url_diagnostics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +26,12 @@ async def post_init(application: Application):
         ("moderation", "Панель модерации"),
         ("faq", "FAQ"),
     ])
+    ok, message = webapp_url_diagnostics()
+    if ok:
+        logger.info(message)
+    else:
+        logger.warning(message)
+
     init_db()
     with get_db_context() as db:
         AchievementsManager().ensure_definitions(db)

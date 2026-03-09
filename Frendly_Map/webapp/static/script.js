@@ -1,3 +1,25 @@
+
+
+function initTelegramWebApp() {
+  const tg = window.Telegram?.WebApp;
+  if (!tg) return;
+
+  try {
+    tg.ready();
+    tg.expand();
+
+    const bg = tg.themeParams?.bg_color;
+    const text = tg.themeParams?.text_color;
+    if (bg) document.body.style.background = bg;
+    if (text) document.body.style.color = text;
+
+    if (typeof tg.viewportHeight === "number" && tg.viewportHeight > 0) {
+      document.documentElement.style.setProperty("--tg-vh", `${tg.viewportHeight}px`);
+    }
+  } catch (e) {
+    console.warn("Telegram WebApp init failed", e);
+  }
+}
 let map;
 let routeLine;
 let userMarker;
@@ -322,6 +344,7 @@ function bindEvents() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  initTelegramWebApp();
   initDom();
   initMap();
   bindEvents();

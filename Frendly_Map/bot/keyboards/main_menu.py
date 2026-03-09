@@ -1,11 +1,13 @@
 # bot/keyboards/main_menu.py
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from bot.config import settings
+from bot.utils.webapp import build_webapp_url, get_map_web_app_info
 
 def get_main_menu(user_id: int):
     buttons = [
-        [InlineKeyboardButton("🗺️ КАРТА", web_app={"url": settings.WEB_APP_URL + "/map"})],
-        [InlineKeyboardButton("🏪 МАГАЗИН", web_app={"url": settings.WEB_APP_URL + "/shop"})],
+        [InlineKeyboardButton("🗺️ КАРТА", web_app=get_map_web_app_info())],
+        [InlineKeyboardButton("🏪 МАГАЗИН", web_app={"url": build_webapp_url("/shop")})],
         [InlineKeyboardButton("👤 ПРОФИЛЬ", callback_data="profile"),
          InlineKeyboardButton("➕ ДОБАВИТЬ ЛОКАЦИЮ", callback_data="add_location")],
         [InlineKeyboardButton("🏆 ДОСТИЖЕНИЯ", callback_data="achievements"),

@@ -37,3 +37,16 @@ docker compose up --build
 - `WEB_APP_URL` — URL веб-приложения (по умолчанию `http://localhost:8000`)
 - `ADMIN_IDS` — список ID администраторов через запятую
 - `SEED_SAMPLE_DATA` — добавлять тестовых пользователей для лидерборда (по умолчанию `false`)
+
+
+## Telegram Mini App / Web App запуск
+
+Для кнопки **КАРТА** в Telegram нужен **публичный HTTPS URL** в `WEB_APP_URL`.
+
+### Локальная разработка
+1. Запустите webapp локально: `python -m webapp.main` (например, на `http://localhost:8000`).
+2. Поднимите HTTPS-туннель (ngrok, cloudflared, pinggy и т.п.) на локальный порт 8000.
+3. Установите `WEB_APP_URL` в `.env` как публичный HTTPS base URL туннеля, например: `https://<your-tunnel>.example`.
+4. Запустите бота: `python -m bot.main`.
+
+> `http://localhost:8000` можно использовать для браузерной проверки, но Telegram WebApp не откроет localhost у конечного пользователя.
