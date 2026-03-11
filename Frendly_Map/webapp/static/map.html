@@ -59,11 +59,6 @@
         </div>
 
         <div class="detail-section">
-            <span class="detail-label">Адрес</span>
-            <p id="detailAddress" class="detail-address"></p>
-        </div>
-
-        <div class="detail-section">
             <span class="detail-label">Описание</span>
             <p id="detailDescription" class="detail-description"></p>
         </div>
@@ -84,6 +79,11 @@
             <button id="clearRouteBtn" class="btn secondary">Очистить маршрут</button>
         </div>
     </section>
+
+    <div id="photoLightbox" class="photo-lightbox hidden" role="dialog" aria-modal="true">
+        <button id="photoLightboxClose" class="photo-lightbox-close" type="button" aria-label="Закрыть">✕</button>
+        <img id="photoLightboxImage" class="photo-lightbox-image" alt="Увеличенное фото локации" />
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>

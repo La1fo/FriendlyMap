@@ -87,11 +87,13 @@ function initDom() {
   els.emptyState = document.getElementById("emptyState");
   els.detailPanel = document.getElementById("detailPanel");
   els.detailTitle = document.getElementById("detailTitle");
-  els.detailAddress = document.getElementById("detailAddress");
   els.detailName = document.getElementById("detailName");
   els.detailDescription = document.getElementById("detailDescription");
   els.detailTags = document.getElementById("detailTags");
   els.detailPhotos = document.getElementById("detailPhotos");
+  els.photoLightbox = document.getElementById("photoLightbox");
+  els.photoLightboxImage = document.getElementById("photoLightboxImage");
+  els.photoLightboxClose = document.getElementById("photoLightboxClose");
   els.routeSummary = document.getElementById("routeSummary");
   els.buildRouteBtn = document.getElementById("buildRouteBtn");
   els.clearRouteBtn = document.getElementById("clearRouteBtn");
@@ -138,7 +140,7 @@ function initMap() {
 
   if (window.MAP_FOCUS_POINT) {
     const p = window.MAP_FOCUS_POINT;
-    L.marker([p.lat, p.lng]).addTo(map).bindPopup(p.name || "Точка").openPopup();
+    L.marker([p.lat, p.lng]).addTo(map);
     map.setView([p.lat, p.lng], 15);
   }
 }
@@ -317,14 +319,12 @@ function selectLocation(locationId, pan = false) {
   selectedLocation = loc;
 
   const marker = markersById.get(loc.id);
-  if (marker) marker.openPopup();
   if (pan) map.setView([loc.latitude, loc.longitude], 15);
 
   els.detailTitle.textContent = loc.name;
   if (els.detailName) {
     els.detailName.textContent = loc.name;
   }
-  els.detailAddress.textContent = loc.address || "Адрес не указан";
   els.detailDescription.textContent = loc.description || "описания нет";
 
   els.detailTags.innerHTML = "";
@@ -347,6 +347,7 @@ function selectLocation(locationId, pan = false) {
       img.src = photo.url;
       img.loading = "lazy";
       img.alt = `Фото ${loc.name}`;
+      img.addEventListener("click", () => openPhotoLightbox(photo.url, loc.name));
       img.onerror = () => {
         img.replaceWith(document.createTextNode("Фото недоступно"));
       };
@@ -361,6 +362,19 @@ function selectLocation(locationId, pan = false) {
 function closeDetail() {
   selectedLocation = null;
   els.detailPanel.classList.remove("open");
+}
+
+function openPhotoLightbox(url, locationName = "") {
+  if (!els.photoLightbox || !els.photoLightboxImage) return;
+  els.photoLightboxImage.src = url;
+  els.photoLightboxImage.alt = locationName ? `Увеличенное фото: ${locationName}` : "Увеличенное фото";
+  els.photoLightbox.classList.remove("hidden");
+}
+
+function closePhotoLightbox() {
+  if (!els.photoLightbox || !els.photoLightboxImage) return;
+  els.photoLightbox.classList.add("hidden");
+  els.photoLightboxImage.src = "";
 }
 
 function ensureUserLocation() {
@@ -464,6 +478,19 @@ function bindEvents() {
   els.buildRouteBtn.addEventListener("click", buildRoute);
   els.clearRouteBtn.addEventListener("click", clearRoute);
   els.closeDetailBtn.addEventListener("click", closeDetail);
+  if (els.photoLightboxClose) {
+    els.photoLightboxClose.addEventListener("click", closePhotoLightbox);
+  }
+  if (els.photoLightbox) {
+    els.photoLightbox.addEventListener("click", (e) => {
+      if (e.target === els.photoLightbox) closePhotoLightbox();
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closePhotoLightbox();
+    }
+  });
   if (window.MAP_PICKER_MODE && els.confirmPointBtn) {
     els.confirmPointBtn.classList.remove("hidden");
     els.confirmPointBtn.addEventListener("click", confirmPickerPoint);

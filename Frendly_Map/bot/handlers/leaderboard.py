@@ -32,6 +32,8 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for idx, user in enumerate(users, start=1):
         name = user.username or user.first_name or "Без имени"
         rank_title = LeaderboardService.get_rank_title(user.pts, idx)
+        if idx > 1:
+            lines.append("────────────")
         lines.append(f"{idx}. {name} — {user.pts} 📍 GP ({rank_title})")
 
     if position and total and current_user:

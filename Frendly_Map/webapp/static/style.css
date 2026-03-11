@@ -56,9 +56,42 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; back
 .tags { display:flex; flex-wrap:wrap; gap:6px; margin:0; }
 .tag { background:#bfdbfe; color:#000; border-radius:999px; padding:4px 8px; font-size:12px; }
 .photo-row { display:flex; gap:8px; overflow:auto; margin:0; }
-.photo-row img { width:92px; height:92px; border-radius:10px; object-fit:cover; border:1px solid #1d4ed8; background:#dbeafe; }
+.photo-row img { width:92px; height:92px; border-radius:10px; object-fit:cover; border:1px solid #1d4ed8; background:#dbeafe; cursor: zoom-in; }
 .route-summary { font-size:13px; color:#072f12; margin-bottom:8px; }
 .detail-actions { display:flex; gap:8px; flex-wrap:wrap; }
+
+.photo-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  background: rgba(15, 23, 42, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.photo-lightbox-image {
+  max-width: 100%;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 2px solid #bfdbfe;
+}
+
+.photo-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  border-radius: 999px;
+  width: 38px;
+  height: 38px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+}
 
 @media (max-width: 860px) {
   .topbar { flex-wrap: wrap; }
