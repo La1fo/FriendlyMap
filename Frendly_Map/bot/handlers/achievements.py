@@ -50,7 +50,9 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if view_type == "ranked":
             lines.extend([f"Сезон: <b>{current_season.key}</b>", ""])
 
-        for achievement in achievements_list:
+        for idx, achievement in enumerate(achievements_list, start=1):
+            if idx > 1:
+                lines.append("────────────")
             season_id = current_season.id if achievement.type == "ranked" else None
             progress_entry = manager.get_user_progress(db, user_id, achievement, season_id=season_id)
             progress = progress_entry.progress if progress_entry else 0

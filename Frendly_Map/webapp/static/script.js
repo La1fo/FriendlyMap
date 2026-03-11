@@ -38,6 +38,17 @@ const TAG_CATEGORY_ORDER = ["Еда", "Отдых", "Город", "Культу�
 
 const els = {};
 
+function isMobileViewport() {
+  return window.matchMedia("(max-width: 860px)").matches;
+}
+
+function setResultsPanelCollapsed(collapsed) {
+  if (!els.sidePanel || !els.resultsToggleBtn || window.MAP_PICKER_MODE || !isMobileViewport()) return;
+  els.sidePanel.classList.toggle("collapsed", collapsed);
+  els.resultsToggleBtn.classList.remove("hidden");
+  els.resultsToggleBtn.textContent = collapsed ? "📋 Показать результаты" : "📋 Скрыть результаты";
+}
+
 function getPickerChatId() {
   if (window.MAP_PICKER_CHAT_ID !== null && window.MAP_PICKER_CHAT_ID !== undefined) {
     const n = Number(window.MAP_PICKER_CHAT_ID);
@@ -84,6 +95,8 @@ function initDom() {
   els.tagFilters = document.getElementById("tagFilters");
   els.selectedTags = document.getElementById("selectedTags");
   els.locationList = document.getElementById("locationList");
+  els.sidePanel = document.querySelector(".side-panel");
+  els.resultsToggleBtn = document.getElementById("resultsToggleBtn");
   els.emptyState = document.getElementById("emptyState");
   els.detailPanel = document.getElementById("detailPanel");
   els.detailTitle = document.getElementById("detailTitle");
@@ -109,6 +122,9 @@ function initDom() {
     els.tagFiltersPanel.classList.add("hidden");
     els.selectedTags.classList.add("hidden");
     document.querySelector(".side-panel")?.classList.add("hidden");
+    els.resultsToggleBtn?.classList.add("hidden");
+  } else if (isMobileViewport()) {
+    setResultsPanelCollapsed(true);
   }
 }
 
@@ -288,7 +304,7 @@ function renderList(locations) {
   locations.forEach((loc) => {
     const item = document.createElement("li");
     item.className = "location-item";
-    item.innerHTML = `<h4>${loc.name}</h4><p>${loc.address || "Адрес не указан"}</p>`;
+    item.innerHTML = `<h4>${loc.name}</h4>`;
     item.addEventListener("click", () => selectLocation(loc.id, true));
     els.locationList.appendChild(item);
   });
@@ -473,6 +489,12 @@ function bindEvents() {
   els.tagsToggleBtn.addEventListener("click", () => {
     els.tagFiltersPanel.classList.toggle("hidden");
   });
+  if (els.resultsToggleBtn) {
+    els.resultsToggleBtn.addEventListener("click", () => {
+      const collapsed = !els.sidePanel?.classList.contains("collapsed");
+      setResultsPanelCollapsed(collapsed);
+    });
+  }
   els.refreshBtn.addEventListener("click", loadLocations);
   els.findMeBtn.addEventListener("click", findMe);
   els.buildRouteBtn.addEventListener("click", buildRoute);
@@ -495,6 +517,20 @@ function bindEvents() {
     els.confirmPointBtn.classList.remove("hidden");
     els.confirmPointBtn.addEventListener("click", confirmPickerPoint);
   }
+  window.addEventListener("resize", () => {
+    if (window.MAP_PICKER_MODE || !els.resultsToggleBtn || !els.sidePanel) return;
+    if (isMobileViewport()) {
+      if (!els.sidePanel.classList.contains("collapsed")) {
+        els.resultsToggleBtn.classList.remove("hidden");
+        els.resultsToggleBtn.textContent = "📋 Скрыть результаты";
+      } else {
+        setResultsPanelCollapsed(true);
+      }
+      return;
+    }
+    els.sidePanel.classList.remove("collapsed");
+    els.resultsToggleBtn.classList.add("hidden");
+  });
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

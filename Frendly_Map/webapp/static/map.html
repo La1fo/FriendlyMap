@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Friendly Map</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/style.css?v=20260311c">
+    <link rel="stylesheet" href="/static/style.css?v=20260311d">
 </head>
 <body>
 <div class="app-shell">
@@ -38,6 +38,7 @@
 
     <main class="content">
         <div id="map" class="map"></div>
+        <button id="resultsToggleBtn" class="results-toggle-btn hidden" type="button">📋 Показать результаты</button>
         <aside class="side-panel">
             <section>
                 <h3>Результаты</h3>
@@ -98,6 +99,6 @@ window.MAP_PICKER_MODE = {{ 'true' if picker_mode else 'false' }};
 window.MAP_FOCUS_POINT = {{ focus_point|tojson if focus_point else 'null' }};
 window.MAP_PICKER_CHAT_ID = {{ picker_chat_id|tojson if picker_chat_id else 'null' }};
 </script>
-<script src="/static/script.js?v=20260311c"></script>
+<script src="/static/script.js?v=20260311d"></script>
 </body>
 </html>

@@ -2,8 +2,8 @@
 body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; background: #f1f5ff; color: #0f172a; }
 .app-shell { height: 100vh; display: flex; flex-direction: column; }
 .topbar { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:10px 12px; background:#ffffff; border-bottom:1px solid #dbe2ea; }
-.topbar h1 { margin:0; font-size:18px; }
-.topbar p { margin:2px 0 0; color:#2563eb; font-weight:700; font-size:12px; }
+.topbar h1 { margin:0; font-size:18px; color:#0f172a !important; }
+.topbar p { margin:2px 0 0; color:#2563eb !important; font-weight:700; font-size:12px; }
 .toolbar { padding:10px 12px; background:#fff; border-bottom:1px solid #dbe2ea; display:grid; gap:8px; }
 #searchInput { width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; }
 .toolbar-actions { display:flex; gap:8px; flex-wrap:wrap; }
@@ -23,11 +23,25 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; back
 .hidden { display:none !important; }
 .content { flex:1; display:flex; min-height:0; position:relative; }
 .map { flex:1; min-height:320px; height:100%; }
-.side-panel { width:280px; background:#fff; border-left:1px solid #dbe2ea; padding:10px; overflow:auto; }
+.side-panel { width:280px; background:#fff; border-left:1px solid #dbe2ea; padding:10px; overflow:auto; color:#0f172a !important; }
+.side-panel h3 { margin:0 0 8px; color:#0f172a !important; }
 .location-list { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
 .location-item { border:1px solid #e2e8f0; border-radius:10px; padding:10px; background:#f8fafc; cursor:pointer; }
 .location-item h4 { margin:0 0 4px; font-size:14px; }
-.location-item p { margin:0; color:#64748b; font-size:12px; }
+
+.results-toggle-btn {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 750;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+  background: #1d4ed8;
+  color: #fff;
+}
 .empty { margin-top:8px; color:#64748b; font-size:13px; }
 
 .detail-panel {
@@ -109,6 +123,19 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; back
     border:1px solid #dbe2ea;
     border-radius:12px;
     box-shadow:0 6px 20px rgba(0,0,0,.16);
+    display: block;
+  }
+  .side-panel.collapsed {
+    display: none;
+  }
+  .results-toggle-btn {
+    display: block;
   }
   .detail-panel { left:6px; right:6px; bottom:6px; max-height:76vh; }
+}
+
+@media (min-width: 861px) {
+  .results-toggle-btn {
+    display: none;
+  }
 }
