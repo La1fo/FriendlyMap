@@ -3,6 +3,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 
 from bot.database import get_db_context
 from bot.models.user import User
+from bot.services.leaderboard_service import LeaderboardService
 from bot.utils.rank import get_user_rank_display
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
@@ -15,6 +16,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     with get_db_context() as db:
         user = db.query(User).filter(User.id == uid).first()
+        position, _ = LeaderboardService.get_user_position(db, uid)
 
     if not user:
         if update.callback_query:
@@ -29,7 +31,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🌐 Ник: @{user.username or 'Не указан'}\n"
         f"⭐ Баллы: {user.points}\n"
         f"🎯 Ранговые очки: {user.pts}\n"
-        f"🏅 Ранг: {get_user_rank_display(user.points)}\n"
+        f"🏅 Ранг: {get_user_rank_display(user.points, position)}\n"
         f"📍 Одобрено локаций: {user.approved_locations}"
     )
 

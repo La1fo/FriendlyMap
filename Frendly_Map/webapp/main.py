@@ -48,6 +48,11 @@ async def map_page(request: Request):
     )
 
 
+@app.get("/shop")
+async def shop_page():
+    return {"message": "Магазин пока закрыт"}
+
+
 if __name__ == "__main__":
     import uvicorn
 

@@ -27,7 +27,7 @@ class LeaderboardService:
     def get_top_users(db: Session, limit: int = 10):
         return (
             db.query(User)
-            .order_by(User.pts.desc(), User.id.asc())
+            .order_by(User.points.desc(), User.id.asc())
             .limit(limit)
             .all()
         )
@@ -39,12 +39,12 @@ class LeaderboardService:
             return 0, 0
         higher_count = (
             db.query(func.count(User.id))
-            .filter(User.pts > user.pts)
+            .filter(User.points > user.points)
             .scalar()
         )
         total = db.query(func.count(User.id)).scalar()
         return higher_count + 1, total
 
     @staticmethod
-    def get_rank_title(pts: int) -> str:
-        return get_user_rank_display(pts)
+    def get_rank_title(points: int, leaderboard_position: int | None = None) -> str:
+        return get_user_rank_display(points, leaderboard_position)

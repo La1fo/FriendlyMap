@@ -15,15 +15,10 @@ from .leaderboard import leaderboard_handler, leaderboard_menu_handler, leaderbo
 from .achievements import achievements_handler, achievements_menu_handler, achievements_callback_handler
 from .faq import (
     faq_handler,
-    faq_add_handler,
     faq_callback_handler,
-    faq_delete_handler,
-    faq_delete_confirm_handler,
-    faq_edit_start_handler,
-    faq_edit_pick_handler,
-    faq_edit_question_handler,
-    faq_edit_answer_handler,
+    faq_menu_handler,
 )
+from .shop import shop_stub_handler
 from .menu import main_menu_callback_handler
 
 
@@ -53,13 +48,8 @@ def get_all_handlers():
         delete_location_handler,
         moderation_delete_back_handler,
         faq_handler,
-        faq_add_handler,
+        faq_menu_handler,
         faq_callback_handler,
-        faq_delete_handler,
-        faq_delete_confirm_handler,
-        faq_edit_start_handler,
-        faq_edit_pick_handler,
-        faq_edit_question_handler,
-        faq_edit_answer_handler,
+        shop_stub_handler,
         main_menu_callback_handler,
     ]

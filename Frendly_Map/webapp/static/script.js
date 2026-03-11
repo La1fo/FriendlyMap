@@ -82,6 +82,10 @@ function initDom() {
 }
 
 function initMap() {
+  if (!window.L) {
+    showStatus("Карта не загрузилась. Обновите страницу или попробуйте позже.", true);
+    return;
+  }
   map = L.map("map").setView([window.MAP_DEFAULTS.lat, window.MAP_DEFAULTS.lng], window.MAP_DEFAULTS.zoom);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors",
@@ -347,6 +351,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initTelegramWebApp();
   initDom();
   initMap();
+  if (!map) return;
   bindEvents();
   await Promise.all([loadTags(), loadLocations()]);
 });

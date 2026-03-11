@@ -162,9 +162,12 @@ async def _render_flow_message(
             await context.bot.edit_message_text(text_value, chat_id=chat_id, message_id=message_id, reply_markup=reply_markup)
             return
         except BadRequest as exc:
-            if "Message is not modified" in str(exc):
+            error_text = str(exc).lower()
+            if "message is not modified" in error_text:
                 return
-            if "message to edit not found" not in str(exc).lower():
+            if "there is no text in the message to edit" in error_text:
+                context.user_data.pop("add_location_message_id", None)
+            elif "message to edit not found" not in error_text:
                 raise
 
     source = update.callback_query.message if update.callback_query else update.message
