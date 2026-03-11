@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import hmac
 import json
 from urllib.parse import parse_qsl
@@ -11,6 +12,7 @@ from bot.models.webapp_pick import WebAppPick
 from webapp.config import settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class PickerConfirmRequest(BaseModel):
@@ -71,4 +73,5 @@ def confirm_picker_point(payload: PickerConfirmRequest):
         )
         db.commit()
 
+    logger.info("Stored webapp picker confirm", extra={"user_id": user_id, "chat_id": chat_id, "flow": "add_location", "latitude": payload.latitude, "longitude": payload.longitude})
     return {"ok": True}

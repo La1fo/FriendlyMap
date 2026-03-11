@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
@@ -41,6 +42,8 @@ GEO_JOB_PREFIX = "addloc_geo_poll_"
 GEO_TASK_PREFIX = "addloc_geo_task_"
 CANCEL_TEXT = "❌ Отменить"
 MAX_SELECTED_TAGS = 5
+logger = logging.getLogger(__name__)
+
 TAG_CATALOG = {
     "Еда": ["кафе", "ресторан", "бар", "фастфуд", "пекарня"],
     "Отдых": ["парк", "лес", "озеро", "река", "пляж", "смотровая площадка", "место для прогулки"],
@@ -71,6 +74,7 @@ async def _schedule_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: i
         for job in context.job_queue.get_jobs_by_name(job_name):
             job.schedule_removal()
 
+        logger.info("Started geo-pick job polling", extra={"user_id": user_id, "chat_id": chat_id})
         context.job_queue.run_repeating(
             _poll_geo_pick_job,
             interval=1.0,
@@ -84,7 +88,9 @@ async def _schedule_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: i
     task = context.application.bot_data.get(task_name)
     if task and not task.done():
         task.cancel()
+        logger.info("Stopped geo-pick async polling task", extra={"user_id": user_id})
 
+    logger.info("Started geo-pick async polling task", extra={"user_id": user_id, "chat_id": chat_id})
     context.application.bot_data[task_name] = context.application.create_task(
         _poll_geo_pick_task(context.application, user_id, chat_id)
     )
@@ -99,6 +105,7 @@ def _stop_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> Non
     task = context.application.bot_data.pop(task_name, None)
     if task and not task.done():
         task.cancel()
+        logger.info("Stopped geo-pick async polling task", extra={"user_id": user_id})
 
 
 def _clear_pending_geo_pick(user_id: int, chat_id: int) -> None:
@@ -160,8 +167,10 @@ async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: in
             .first()
         )
         if not pick:
+            logger.debug("No pending geo-pick record", extra={"user_id": user_id, "chat_id": chat_id, "flow": WEBAPP_FLOW_ADD_LOCATION})
             return False
 
+        logger.info("Geo-pick record found", extra={"user_id": user_id, "chat_id": chat_id, "pick_id": pick.id, "flow": WEBAPP_FLOW_ADD_LOCATION})
         pick.processed = True
         lat = pick.latitude
         lng = pick.longitude
@@ -179,6 +188,7 @@ async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: in
 
     fake_context = type("Ctx", (), {"bot": bot, "user_data": user_data})()
     await _render_tag_categories(synthetic_update, fake_context)
+    logger.info("Advanced add-location conversation after geo-pick", extra={"user_id": user_id, "chat_id": chat_id, "next_state": ASK_TAG_CATEGORY})
 
     task_name = _geo_task_name(user_id)
     task = application.bot_data.pop(task_name, None)
