@@ -34,6 +34,8 @@ let filteredLocations = [];
 let selectedTags = new Set();
 let searchTerm = "";
 
+const TAG_CATEGORY_ORDER = ["Еда", "Отдых", "Город", "Культура", "Развлечения", "Атмосфера", "Активности", "Доступность"];
+
 const els = {};
 
 function getPickerChatId() {
@@ -86,6 +88,7 @@ function initDom() {
   els.detailPanel = document.getElementById("detailPanel");
   els.detailTitle = document.getElementById("detailTitle");
   els.detailAddress = document.getElementById("detailAddress");
+  els.detailName = document.getElementById("detailName");
   els.detailDescription = document.getElementById("detailDescription");
   els.detailTags = document.getElementById("detailTags");
   els.detailPhotos = document.getElementById("detailPhotos");
@@ -112,9 +115,9 @@ function initMap() {
     showStatus("Карта не загрузилась. Обновите страницу или попробуйте позже.", true);
     return;
   }
-  map = L.map("map").setView([window.MAP_DEFAULTS.lat, window.MAP_DEFAULTS.lng], window.MAP_DEFAULTS.zoom);
+  map = L.map("map", { attributionControl: false }).setView([window.MAP_DEFAULTS.lat, window.MAP_DEFAULTS.lng], window.MAP_DEFAULTS.zoom);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "&copy; OpenStreetMap contributors",
+    attribution: "",
     maxZoom: 19,
   }).addTo(map);
 
@@ -214,20 +217,48 @@ function renderSelectedTags() {
 
 function renderTags(tags) {
   els.tagFilters.innerHTML = "";
+  const grouped = new Map();
   tags.forEach((tag) => {
-    const chip = document.createElement("button");
-    chip.className = "tag-chip";
-    chip.textContent = tag.name;
-    chip.dataset.tag = tag.name.toLowerCase();
-    chip.addEventListener("click", () => {
-      const key = chip.dataset.tag;
-      if (selectedTags.has(key)) selectedTags.delete(key);
-      else selectedTags.add(key);
-      chip.classList.toggle("active", selectedTags.has(key));
-      applyFilters();
-      renderSelectedTags();
+    const category = tag.category || "Другое";
+    if (!grouped.has(category)) grouped.set(category, []);
+    grouped.get(category).push(tag);
+  });
+
+  const orderedCategories = [
+    ...TAG_CATEGORY_ORDER.filter((category) => grouped.has(category)),
+    ...[...grouped.keys()].filter((category) => !TAG_CATEGORY_ORDER.includes(category)),
+  ];
+
+  orderedCategories.forEach((category) => {
+    const groupWrap = document.createElement("section");
+    groupWrap.className = "tag-group";
+
+    const title = document.createElement("p");
+    title.className = "tag-group-title";
+    title.textContent = category;
+    groupWrap.appendChild(title);
+
+    const chipsWrap = document.createElement("div");
+    chipsWrap.className = "tag-group-chips";
+
+    grouped.get(category).forEach((tag) => {
+      const chip = document.createElement("button");
+      chip.className = "tag-chip";
+      chip.textContent = tag.name;
+      chip.dataset.tag = tag.name.toLowerCase();
+      chip.addEventListener("click", () => {
+        const key = chip.dataset.tag;
+        if (selectedTags.has(key)) selectedTags.delete(key);
+        else selectedTags.add(key);
+        chip.classList.toggle("active", selectedTags.has(key));
+        applyFilters();
+        renderSelectedTags();
+      });
+      chipsWrap.appendChild(chip);
     });
-    els.tagFilters.appendChild(chip);
+
+    groupWrap.appendChild(chipsWrap);
+    els.tagFilters.appendChild(groupWrap);
   });
   renderSelectedTags();
 }
@@ -290,8 +321,11 @@ function selectLocation(locationId, pan = false) {
   if (pan) map.setView([loc.latitude, loc.longitude], 15);
 
   els.detailTitle.textContent = loc.name;
+  if (els.detailName) {
+    els.detailName.textContent = loc.name;
+  }
   els.detailAddress.textContent = loc.address || "Адрес не указан";
-  els.detailDescription.textContent = loc.description || "Описание отсутствует";
+  els.detailDescription.textContent = loc.description || "описания нет";
 
   els.detailTags.innerHTML = "";
   (loc.tags || []).forEach((tag) => {
@@ -321,12 +355,12 @@ function selectLocation(locationId, pan = false) {
   }
 
   els.routeSummary.classList.add("hidden");
-  els.detailPanel.classList.remove("hidden");
+  els.detailPanel.classList.add("open");
 }
 
 function closeDetail() {
   selectedLocation = null;
-  els.detailPanel.classList.add("hidden");
+  els.detailPanel.classList.remove("open");
 }
 
 function ensureUserLocation() {

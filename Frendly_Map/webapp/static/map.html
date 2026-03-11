@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Friendly Map</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/style.css?v=20260311b">
+    <link rel="stylesheet" href="/static/style.css?v=20260311c">
 </head>
 <body>
 <div class="app-shell">
     <header class="topbar">
         <div>
             <h1>Friendly Map</h1>
-            <p>Найди удобные места рядом</p>
+            <p>Friendly Map Bot</p>
         </div>
         <div class="toolbar-actions">
             <button id="findMeBtn" class="btn">📍 Я здесь</button>
@@ -47,15 +47,37 @@
         </aside>
     </main>
 
-    <section id="detailPanel" class="detail-panel hidden">
+    <section id="detailPanel" class="detail-panel">
         <div class="detail-header">
             <h2 id="detailTitle"></h2>
             <button id="closeDetailBtn" class="btn-icon">✕</button>
         </div>
-        <p id="detailAddress" class="detail-address"></p>
-        <p id="detailDescription" class="detail-description"></p>
-        <div id="detailTags" class="tags"></div>
-        <div id="detailPhotos" class="photo-row"></div>
+
+        <div class="detail-section">
+            <span class="detail-label">Название</span>
+            <p id="detailName" class="detail-description"></p>
+        </div>
+
+        <div class="detail-section">
+            <span class="detail-label">Адрес</span>
+            <p id="detailAddress" class="detail-address"></p>
+        </div>
+
+        <div class="detail-section">
+            <span class="detail-label">Описание</span>
+            <p id="detailDescription" class="detail-description"></p>
+        </div>
+
+        <div class="detail-section">
+            <span class="detail-label">Теги</span>
+            <div id="detailTags" class="tags"></div>
+        </div>
+
+        <div class="detail-section">
+            <span class="detail-label">Фото</span>
+            <div id="detailPhotos" class="photo-row"></div>
+        </div>
+
         <div id="routeSummary" class="route-summary hidden"></div>
         <div class="detail-actions">
             <button id="buildRouteBtn" class="btn">🧭 Построить маршрут</button>
@@ -76,6 +98,6 @@ window.MAP_PICKER_MODE = {{ 'true' if picker_mode else 'false' }};
 window.MAP_FOCUS_POINT = {{ focus_point|tojson if focus_point else 'null' }};
 window.MAP_PICKER_CHAT_ID = {{ picker_chat_id|tojson if picker_chat_id else 'null' }};
 </script>
-<script src="/static/script.js?v=20260311b"></script>
+<script src="/static/script.js?v=20260311c"></script>
 </body>
 </html>
