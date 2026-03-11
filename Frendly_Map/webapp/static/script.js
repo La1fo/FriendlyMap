@@ -36,6 +36,19 @@ let searchTerm = "";
 
 const els = {};
 
+function getPickerChatId() {
+  if (window.MAP_PICKER_CHAT_ID !== null && window.MAP_PICKER_CHAT_ID !== undefined) {
+    const n = Number(window.MAP_PICKER_CHAT_ID);
+    return Number.isFinite(n) ? n : null;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("chat_id");
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+
 function showStatus(message, persistent = false) {
   els.statusBar.textContent = message;
   els.statusBar.classList.remove("hidden");
@@ -149,11 +162,12 @@ async function confirmPickerPoint() {
         latitude: pickerCoords.lat,
         longitude: pickerCoords.lng,
         init_data: tg.initData,
-        chat_id: window.MAP_PICKER_CHAT_ID ? Number(window.MAP_PICKER_CHAT_ID) : null,
+        chat_id: getPickerChatId(),
       }),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok !== true) {
+      throw new Error(payload?.detail || `HTTP ${response.status}`);
     }
 
     showStatus("Точка сохранена. Возвращайтесь в бот", true);
