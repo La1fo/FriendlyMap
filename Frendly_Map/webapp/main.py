@@ -1,7 +1,7 @@
 # webapp/main.py
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -53,7 +53,7 @@ async def map_page(request: Request):
         except ValueError:
             focus_point = None
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "map.html",
         {
             "request": request,
@@ -64,11 +64,18 @@ async def map_page(request: Request):
             "focus_point": focus_point,
         },
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/shop")
 async def shop_page():
     return {"message": "Магазин пока закрыт"}
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)
 
 
 if __name__ == "__main__":

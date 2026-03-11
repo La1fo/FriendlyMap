@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Friendly Map</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=20260311a">
 </head>
 <body>
 <div class="app-shell">
@@ -75,6 +75,6 @@ window.MAP_DEFAULTS = {
 window.MAP_PICKER_MODE = {{ 'true' if picker_mode else 'false' }};
 window.MAP_FOCUS_POINT = {{ focus_point|tojson if focus_point else 'null' }};
 </script>
-<script src="/static/script.js"></script>
+<script src="/static/script.js?v=20260311a"></script>
 </body>
 </html>
