@@ -1,6 +1,6 @@
 import json
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update, WebAppInfo
 from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
@@ -60,13 +60,14 @@ def _description_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _location_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map?picker=1")})],
-            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
-        ]
+def _location_reply_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("🗺️ Открыть карту", web_app=WebAppInfo(url=build_webapp_url("/map?picker=1")))]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        selective=True,
     )
+
 
 def _photo_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -178,6 +179,22 @@ async def _render_flow_message(
     context.user_data["add_location_message_id"] = sent.message_id
 
 
+async def _render_location_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE, text_value: str) -> None:
+    message_id = context.user_data.get("add_location_message_id")
+    if message_id:
+        try:
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
+        except Exception:
+            pass
+
+    sent = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=text_value,
+        reply_markup=_location_reply_keyboard(),
+    )
+    context.user_data["add_location_message_id"] = sent.message_id
+
+
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     banner = get_section_banner("main_menu")
     caption = f"<b>{banner['title']}</b>\n\n{banner['description']}"
@@ -245,11 +262,10 @@ async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["loc_description"] = update.message.text.strip()
     await _delete_user_message(update, context)
-    await _render_flow_message(
+    await _render_location_prompt(
         update,
         context,
         "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
-        _location_keyboard(),
     )
     return ASK_LOCATION
 
@@ -257,11 +273,10 @@ async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     context.user_data["loc_description"] = None
-    await _render_flow_message(
+    await _render_location_prompt(
         update,
         context,
         "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
-        _location_keyboard(),
     )
     return ASK_LOCATION
 
@@ -315,11 +330,10 @@ async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if lat is None or lng is None:
         await _delete_user_message(update, context)
-        await _render_flow_message(
+        await _render_location_prompt(
             update,
             context,
             "⚠️ Нужна геопозиция. Открой карту, поставь метку и нажми «Подтвердить точку».",
-            _location_keyboard(),
         )
         return ASK_LOCATION
 
