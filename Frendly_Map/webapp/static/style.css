@@ -16,7 +16,7 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; back
 .status { margin:8px 12px; padding:8px 10px; border-radius:8px; background:#fff7ed; color:#9a3412; font-size:13px; }
 .hidden { display:none !important; }
 .content { flex:1; display:flex; min-height:0; }
-.map { flex:1; min-height:0; }
+.map { flex:1; min-height:320px; height:100%; }
 .side-panel { width:280px; background:#fff; border-left:1px solid #dbe2ea; padding:10px; overflow:auto; }
 .location-list { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
 .location-item { border:1px solid #e2e8f0; border-radius:10px; padding:10px; background:#f8fafc; cursor:pointer; }
@@ -36,6 +36,7 @@ body { margin: 0; font-family: Inter, system-ui, -apple-system, sans-serif; back
 .detail-actions { display:flex; gap:8px; }
 @media (max-width: 860px) {
   .content { display:block; position:relative; }
+  .map { height:58vh; min-height:360px; }
   .side-panel { position:absolute; z-index:700; left:8px; right:8px; bottom:8px; width:auto; max-height:32vh; border:1px solid #dbe2ea; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,.16); }
 }
 
