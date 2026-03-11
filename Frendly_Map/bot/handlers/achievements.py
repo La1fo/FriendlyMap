@@ -56,9 +56,9 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
             progress = progress_entry.progress if progress_entry else 0
             target = _get_target(achievement)
             completed = bool(progress_entry and progress_entry.is_completed)
-            reward = f"+{achievement.points_reward}⭐"
+            reward = f"+{achievement.points_reward}🪙"
             if achievement.type == "ranked" and achievement.pts_reward:
-                reward += f", +{achievement.pts_reward}🎖️"
+                reward += f", +{achievement.pts_reward}📍 GP"
 
             scale = _progress_bar(progress, target)
             lines.append(

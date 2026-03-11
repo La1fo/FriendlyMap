@@ -29,8 +29,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = (
         f"<b>{banner['title']}</b>\n{banner['description']}\n\n"
         f"🌐 Ник: @{user.username or 'Не указан'}\n"
-        f"⭐ Баллы: {user.points}\n"
-        f"🎯 Ранговые очки: {user.pts}\n"
+        f"🪙 Монеты: {user.points}\n"
+        f"📍 GP: {user.pts}\n"
         f"🏅 Ранг: {get_user_rank_display(user.points, position)}\n"
         f"📍 Одобрено локаций: {user.approved_locations}"
     )
