@@ -1,7 +1,8 @@
 import json
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update, WebAppInfo
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
+from telegram.ext._utils.types import CCT
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -14,6 +15,7 @@ from telegram.ext import (
 from bot.database import get_db_context
 from bot.keyboards.main_menu import get_main_menu
 from bot.models.tag import Tag
+from bot.models.webapp_pick import WebAppPick
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.location_service import LocationService
 from bot.utils.section_banners import get_section_banner, send_section_banner
@@ -33,6 +35,8 @@ CB_TAG_SKIP = "addloc_tag_skip"
 CB_TAG_CLEAR = "addloc_tag_clear"
 CB_TAG_BACK = "addloc_tag_back"
 
+WEBAPP_FLOW_ADD_LOCATION = "add_location"
+GEO_JOB_PREFIX = "addloc_geo_poll_"
 CANCEL_TEXT = "❌ Отменить"
 MAX_SELECTED_TAGS = 5
 TAG_CATALOG = {
@@ -45,6 +49,99 @@ TAG_CATALOG = {
     "Активности": ["прогулка", "пикник", "работа", "свидание", "спорт", "фотосъёмка", "отдых"],
     "Доступность": ["бесплатно", "платно", "круглосуточно", "семейное место", "подходит для детей", "можно с животными"],
 }
+
+
+def _geo_job_name(user_id: int) -> str:
+    return f"{GEO_JOB_PREFIX}{user_id}"
+
+
+def _conversation_key(chat_id: int, user_id: int) -> tuple[int, int]:
+    return chat_id, user_id
+
+
+async def _schedule_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int) -> None:
+    job_name = _geo_job_name(user_id)
+    for job in context.job_queue.get_jobs_by_name(job_name):
+        job.schedule_removal()
+
+    context.job_queue.run_repeating(
+        _poll_geo_pick_job,
+        interval=1.0,
+        first=1.0,
+        name=job_name,
+        data={"user_id": user_id, "chat_id": chat_id},
+    )
+
+
+def _stop_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
+    for job in context.job_queue.get_jobs_by_name(_geo_job_name(user_id)):
+        job.schedule_removal()
+
+
+def _clear_pending_geo_pick(user_id: int, chat_id: int) -> None:
+    with get_db_context() as db:
+        db.query(WebAppPick).filter(
+            WebAppPick.user_id == user_id,
+            WebAppPick.chat_id == chat_id,
+            WebAppPick.flow == WEBAPP_FLOW_ADD_LOCATION,
+            WebAppPick.processed.is_(False),
+        ).delete()
+        db.commit()
+
+
+class _SyntheticMessage:
+    def __init__(self, bot, chat_id: int):
+        self._bot = bot
+        self.chat_id = chat_id
+
+    async def reply_text(self, text: str, reply_markup=None):
+        return await self._bot.send_message(chat_id=self.chat_id, text=text, reply_markup=reply_markup)
+
+
+class _SyntheticUpdate:
+    def __init__(self, bot, user_id: int, chat_id: int):
+        self.callback_query = None
+        self.message = _SyntheticMessage(bot, chat_id)
+        self.effective_chat = type("Chat", (), {"id": chat_id})()
+        self.effective_user = type("User", (), {"id": user_id})()
+
+
+async def _poll_geo_pick_job(context: CCT):
+    user_id = context.job.data["user_id"]
+    chat_id = context.job.data["chat_id"]
+
+    with get_db_context() as db:
+        pick = (
+            db.query(WebAppPick)
+            .filter(
+                WebAppPick.user_id == user_id,
+                WebAppPick.chat_id == chat_id,
+                WebAppPick.flow == WEBAPP_FLOW_ADD_LOCATION,
+                WebAppPick.processed.is_(False),
+            )
+            .order_by(WebAppPick.id.desc())
+            .first()
+        )
+        if not pick:
+            return
+
+        pick.processed = True
+        lat = pick.latitude
+        lng = pick.longitude
+        db.commit()
+
+    context.application.user_data[user_id]["latitude"] = lat
+    context.application.user_data[user_id]["longitude"] = lng
+
+    with get_db_context() as db:
+        LocationService.ensure_tags(db, TAG_CATALOG)
+
+    add_location_handler._conversations[_conversation_key(chat_id, user_id)] = ASK_TAG_CATEGORY
+    synthetic_update = _SyntheticUpdate(context.bot, user_id, chat_id)
+    await _render_tag_categories(synthetic_update, context)
+
+    _stop_geo_pick_poll(context, user_id)
+
 
 
 def _cancel_keyboard() -> InlineKeyboardMarkup:
@@ -60,15 +157,12 @@ def _description_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _location_reply_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
+def _location_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
         [
-            [KeyboardButton("🗺️ Открыть карту", web_app=WebAppInfo(url=build_webapp_url("/map?picker=1")))],
-            [KeyboardButton(CANCEL_TEXT)],
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        selective=True,
+            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map?picker=1")})],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
+        ]
     )
 
 
@@ -183,19 +277,7 @@ async def _render_flow_message(
 
 
 async def _render_location_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE, text_value: str) -> None:
-    message_id = context.user_data.get("add_location_message_id")
-    if message_id:
-        try:
-            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
-        except Exception:
-            pass
-
-    sent = await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=text_value,
-        reply_markup=_location_reply_keyboard(),
-    )
-    context.user_data["add_location_message_id"] = sent.message_id
+    await _render_flow_message(update, context, text_value, _location_keyboard())
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -270,6 +352,8 @@ async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context,
         "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
     )
+    _clear_pending_geo_pick(update.effective_user.id, update.effective_chat.id)
+    await _schedule_geo_pick_poll(context, update.effective_user.id, update.effective_chat.id)
     return ASK_LOCATION
 
 
@@ -281,6 +365,8 @@ async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context,
         "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
     )
+    _clear_pending_geo_pick(update.effective_user.id, update.effective_chat.id)
+    await _schedule_geo_pick_poll(context, update.effective_user.id, update.effective_chat.id)
     return ASK_LOCATION
 
 
@@ -328,8 +414,6 @@ async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message and message.location:
         lat = message.location.latitude
         lng = message.location.longitude
-    elif message and message.web_app_data and message.web_app_data.data:
-        lat, lng = _parse_webapp_coords(message.web_app_data.data)
     elif message and message.text:
         lat, lng = _parse_webapp_coords(message.text)
 
@@ -484,7 +568,8 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.delete_message(chat_id=user.id, message_id=flow_message_id)
         except Exception:
             pass
-
+    _stop_geo_pick_poll(context, user.id)
+    _clear_pending_geo_pick(user.id, update.effective_chat.id)
     _clear_flow_data(context)
     await _show_main_menu(update, context)
     return ConversationHandler.END
@@ -501,6 +586,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+    _stop_geo_pick_poll(context, update.effective_user.id)
+    _clear_pending_geo_pick(update.effective_user.id, update.effective_chat.id)
     _clear_flow_data(context)
     await _show_main_menu(update, context)
     return ConversationHandler.END
@@ -519,9 +606,7 @@ add_location_handler = ConversationHandler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
         ],
         ASK_LOCATION: [
-            MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
             MessageHandler(filters.LOCATION, get_coords),
-            MessageHandler(filters.StatusUpdate.WEB_APP_DATA, get_coords),
             MessageHandler(filters.TEXT & ~filters.COMMAND, get_coords),
         ],
         ASK_TAG_CATEGORY: [

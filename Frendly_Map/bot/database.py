@@ -189,6 +189,7 @@ def init_db():
     from bot.models.faq_entry import FaqEntry  # noqa: F401
     from bot.models.support_ticket import SupportTicket, SupportMessage  # noqa: F401
     from bot.models.support_session import SupportSession  # noqa: F401
+    from bot.models.webapp_pick import WebAppPick  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _migrate_postgres_ids_to_bigint()

@@ -127,7 +127,7 @@ function initMap() {
   }
 }
 
-function confirmPickerPoint() {
+async function confirmPickerPoint() {
   if (!pickerCoords && map) {
     const center = map.getCenter();
     pickerCoords = { lat: center.lat, lng: center.lng };
@@ -135,21 +135,33 @@ function confirmPickerPoint() {
     pickerMarker = L.marker([pickerCoords.lat, pickerCoords.lng]).addTo(map);
   }
 
-  const payload = JSON.stringify({
-    type: "add_location_point",
-    latitude: pickerCoords.lat,
-    longitude: pickerCoords.lng,
-  });
-
   const tg = window.Telegram?.WebApp;
-  if (tg?.sendData) {
-    tg.sendData(payload);
-    showStatus("Точка отправлена в бот", true);
-    setTimeout(() => tg.close(), 250);
+  if (!tg?.initData) {
+    showStatus("Точка выбрана, но это не Telegram WebApp", true);
     return;
   }
 
-  showStatus("Точка выбрана, но это не Telegram WebApp", true);
+  try {
+    const response = await fetch("/api/webapp/picker/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        latitude: pickerCoords.lat,
+        longitude: pickerCoords.lng,
+        init_data: tg.initData,
+        chat_id: tg.initDataUnsafe?.user?.id,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    showStatus("Точка сохранена. Возвращайтесь в бот", true);
+    setTimeout(() => tg.close(), 300);
+  } catch (err) {
+    console.error(err);
+    showStatus("Не удалось передать точку. Попробуйте снова", true);
+  }
 }
 
 async function apiJson(url) {
