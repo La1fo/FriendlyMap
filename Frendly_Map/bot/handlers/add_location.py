@@ -24,8 +24,8 @@ ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_TAG_CATEGORY, ASK_TAG_PICK, ASK_PHO
 
 CB_CANCEL = "addloc_cancel"
 CB_SKIP_DESC = "addloc_skip_desc"
-CB_SKIP_PHOTO = "addloc_skip_photo"
 CB_CONFIRM = "addloc_confirm"
+CB_PHOTO_DONE = "addloc_photo_done"
 CB_TAG_CAT = "addloc_tag_cat_"
 CB_TAG_TOGGLE = "addloc_tag_toggle_"
 CB_TAG_DONE = "addloc_tag_done"
@@ -71,7 +71,7 @@ def _location_keyboard() -> InlineKeyboardMarkup:
 def _photo_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("⏭ Пропустить фото", callback_data=CB_SKIP_PHOTO)],
+            [InlineKeyboardButton("✅ Подтвердить", callback_data=CB_PHOTO_DONE)],
             [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
         ]
     )
@@ -221,7 +221,7 @@ async def _proceed_to_photo_step(update: Update, context: ContextTypes.DEFAULT_T
     await _render_flow_message(
         update,
         context,
-        "📷 Отправь фото места (можно несколько) или пропусти шаг.",
+        "📷 Отправь хотя бы одно фото места. Можно отправить несколько.",
         _photo_keyboard(),
     )
     return ASK_PHOTO
@@ -365,16 +365,18 @@ async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_id = update.message.photo[-1].file_id
         context.user_data.setdefault("photos", []).append(file_id)
         await _delete_user_message(update, context)
+        photos_count = len(context.user_data.get('photos', []))
         await _render_flow_message(
             update,
             context,
-            f"📷 Фото добавлено: {len(context.user_data.get('photos', []))}. Можно отправить ещё или пропустить.",
+            f"📷 Фото добавлено: {photos_count}. "
+            f"Отправь ещё фото или нажми «Подтвердить», когда закончишь.",
             _photo_keyboard(),
         )
         return ASK_PHOTO
 
     await _delete_user_message(update, context)
-    await _render_flow_message(update, context, "⚠️ Отправь фото или нажми «Пропустить фото».", _photo_keyboard())
+    await _render_flow_message(update, context, "⚠️ Отправь фото места, пропустить этот шаг нельзя.", _photo_keyboard())
     return ASK_PHOTO
 
 
@@ -401,10 +403,6 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await _render_flow_message(update, context, msg, _confirm_keyboard())
     return CONFIRM
-
-
-async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await confirm(update, context)
 
 
 async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -489,7 +487,7 @@ add_location_handler = ConversationHandler(
             CallbackQueryHandler(tags_clear_all, pattern=f"^{CB_TAG_CLEAR}$"),
         ],
         ASK_PHOTO: [
-            CallbackQueryHandler(skip_photo, pattern=f"^{CB_SKIP_PHOTO}$"),
+            CallbackQueryHandler(confirm, pattern=f"^{CB_PHOTO_DONE}$"),
             MessageHandler(filters.PHOTO, collect_photo),
             MessageHandler(filters.TEXT & ~filters.COMMAND, collect_photo),
         ],
