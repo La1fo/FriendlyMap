@@ -149,7 +149,7 @@ async function confirmPickerPoint() {
         latitude: pickerCoords.lat,
         longitude: pickerCoords.lng,
         init_data: tg.initData,
-        chat_id: tg.initDataUnsafe?.user?.id,
+        chat_id: window.MAP_PICKER_CHAT_ID ? Number(window.MAP_PICKER_CHAT_ID) : null,
       }),
     });
     if (!response.ok) {

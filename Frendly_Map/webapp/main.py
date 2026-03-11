@@ -1,21 +1,14 @@
 # webapp/main.py
 from pathlib import Path
-import hashlib
-import hmac
-import json
-from urllib.parse import parse_qsl
-
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from bot.database import init_db
 from webapp.config import settings
-from bot.database import get_db_context
-from bot.models.webapp_pick import WebAppPick
 
-from .api import map, tag
+from .api import map, tag, webapp
 
 app = FastAPI(title="Friendly Map Web App")
 
@@ -34,6 +27,7 @@ templates = Jinja2Templates(directory=static_dir)
 
 app.include_router(map.router, prefix="/api/map")
 app.include_router(tag.router, prefix="/api/tag")
+app.include_router(webapp.router, prefix="/api/webapp")
 
 
 @app.on_event("startup")
@@ -48,6 +42,7 @@ async def map_page(request: Request):
     focus_lat = request.query_params.get("focus_lat")
     focus_lng = request.query_params.get("focus_lng")
     focus_name = request.query_params.get("focus_name") or "Точка"
+    picker_chat_id = request.query_params.get("chat_id")
     focus_point = None
     if focus_lat and focus_lng:
         try:
@@ -68,70 +63,11 @@ async def map_page(request: Request):
             "default_zoom": settings.DEFAULT_MAP_ZOOM,
             "picker_mode": picker_mode,
             "focus_point": focus_point,
+            "picker_chat_id": picker_chat_id,
         },
     )
     response.headers["Cache-Control"] = "no-store"
     return response
-
-
-def _validate_telegram_init_data(init_data: str) -> dict:
-    if not init_data:
-        raise HTTPException(status_code=400, detail="init_data is required")
-
-    pairs = parse_qsl(init_data, keep_blank_values=True)
-    data = dict(pairs)
-    provided_hash = data.pop("hash", None)
-    if not provided_hash:
-        raise HTTPException(status_code=400, detail="Missing hash in init_data")
-
-    check_string = "\n".join(f"{k}={v}" for k, v in sorted(data.items()))
-    secret = hmac.new(b"WebAppData", settings.BOT_TOKEN.encode(), hashlib.sha256).digest()
-    computed_hash = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(computed_hash, provided_hash):
-        raise HTTPException(status_code=403, detail="Invalid Telegram init_data")
-
-    user_raw = data.get("user")
-    if not user_raw:
-        raise HTTPException(status_code=400, detail="Missing user in init_data")
-
-    try:
-        return json.loads(user_raw)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Invalid user payload") from exc
-
-
-@app.post("/api/webapp/picker/confirm")
-async def confirm_picker_point(request: Request):
-    payload = await request.json()
-
-    init_data = payload.get("init_data") or ""
-    user_payload = _validate_telegram_init_data(init_data)
-
-    user_id = int(user_payload["id"])
-    chat_id = int(payload.get("chat_id") or user_id)
-    latitude = float(payload["latitude"])
-    longitude = float(payload["longitude"])
-
-    with get_db_context() as db:
-        db.query(WebAppPick).filter(
-            WebAppPick.user_id == user_id,
-            WebAppPick.chat_id == chat_id,
-            WebAppPick.flow == "add_location",
-            WebAppPick.processed.is_(False),
-        ).delete()
-        db.add(
-            WebAppPick(
-                user_id=user_id,
-                chat_id=chat_id,
-                flow="add_location",
-                latitude=latitude,
-                longitude=longitude,
-                processed=False,
-            )
-        )
-        db.commit()
-
-    return {"ok": True}
 
 
 @app.get("/shop")

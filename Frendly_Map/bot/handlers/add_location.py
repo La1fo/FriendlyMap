@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -37,6 +38,7 @@ CB_TAG_BACK = "addloc_tag_back"
 
 WEBAPP_FLOW_ADD_LOCATION = "add_location"
 GEO_JOB_PREFIX = "addloc_geo_poll_"
+GEO_TASK_PREFIX = "addloc_geo_task_"
 CANCEL_TEXT = "❌ Отменить"
 MAX_SELECTED_TAGS = 5
 TAG_CATALOG = {
@@ -55,27 +57,48 @@ def _geo_job_name(user_id: int) -> str:
     return f"{GEO_JOB_PREFIX}{user_id}"
 
 
+def _geo_task_name(user_id: int) -> str:
+    return f"{GEO_TASK_PREFIX}{user_id}"
+
+
 def _conversation_key(chat_id: int, user_id: int) -> tuple[int, int]:
     return chat_id, user_id
 
 
 async def _schedule_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int) -> None:
-    job_name = _geo_job_name(user_id)
-    for job in context.job_queue.get_jobs_by_name(job_name):
-        job.schedule_removal()
+    if context.job_queue is not None:
+        job_name = _geo_job_name(user_id)
+        for job in context.job_queue.get_jobs_by_name(job_name):
+            job.schedule_removal()
 
-    context.job_queue.run_repeating(
-        _poll_geo_pick_job,
-        interval=1.0,
-        first=1.0,
-        name=job_name,
-        data={"user_id": user_id, "chat_id": chat_id},
+        context.job_queue.run_repeating(
+            _poll_geo_pick_job,
+            interval=1.0,
+            first=1.0,
+            name=job_name,
+            data={"user_id": user_id, "chat_id": chat_id},
+        )
+        return
+
+    task_name = _geo_task_name(user_id)
+    task = context.application.bot_data.get(task_name)
+    if task and not task.done():
+        task.cancel()
+
+    context.application.bot_data[task_name] = context.application.create_task(
+        _poll_geo_pick_task(context.application, user_id, chat_id)
     )
 
 
 def _stop_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
-    for job in context.job_queue.get_jobs_by_name(_geo_job_name(user_id)):
-        job.schedule_removal()
+    if context.job_queue is not None:
+        for job in context.job_queue.get_jobs_by_name(_geo_job_name(user_id)):
+            job.schedule_removal()
+
+    task_name = _geo_task_name(user_id)
+    task = context.application.bot_data.pop(task_name, None)
+    if task and not task.done():
+        task.cancel()
 
 
 def _clear_pending_geo_pick(user_id: int, chat_id: int) -> None:
@@ -109,7 +132,21 @@ class _SyntheticUpdate:
 async def _poll_geo_pick_job(context: CCT):
     user_id = context.job.data["user_id"]
     chat_id = context.job.data["chat_id"]
+    await _advance_from_pending_pick(context.application, context.bot, user_id, chat_id)
 
+
+async def _poll_geo_pick_task(application, user_id: int, chat_id: int):
+    try:
+        while True:
+            advanced = await _advance_from_pending_pick(application, application.bot, user_id, chat_id)
+            if advanced:
+                return
+            await asyncio.sleep(1.0)
+    except asyncio.CancelledError:
+        return
+
+
+async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: int) -> bool:
     with get_db_context() as db:
         pick = (
             db.query(WebAppPick)
@@ -123,25 +160,31 @@ async def _poll_geo_pick_job(context: CCT):
             .first()
         )
         if not pick:
-            return
+            return False
 
         pick.processed = True
         lat = pick.latitude
         lng = pick.longitude
         db.commit()
 
-    context.application.user_data[user_id]["latitude"] = lat
-    context.application.user_data[user_id]["longitude"] = lng
+    user_data = application.user_data.setdefault(user_id, {})
+    user_data["latitude"] = lat
+    user_data["longitude"] = lng
 
     with get_db_context() as db:
         LocationService.ensure_tags(db, TAG_CATALOG)
 
     add_location_handler._conversations[_conversation_key(chat_id, user_id)] = ASK_TAG_CATEGORY
-    synthetic_update = _SyntheticUpdate(context.bot, user_id, chat_id)
-    await _render_tag_categories(synthetic_update, context)
+    synthetic_update = _SyntheticUpdate(bot, user_id, chat_id)
 
-    _stop_geo_pick_poll(context, user_id)
+    fake_context = type("Ctx", (), {"bot": bot, "user_data": user_data})()
+    await _render_tag_categories(synthetic_update, fake_context)
 
+    task_name = _geo_task_name(user_id)
+    task = application.bot_data.pop(task_name, None)
+    if task and not task.done() and asyncio.current_task() is not task:
+        task.cancel()
+    return True
 
 
 def _cancel_keyboard() -> InlineKeyboardMarkup:
@@ -157,10 +200,10 @@ def _description_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _location_keyboard() -> InlineKeyboardMarkup:
+def _location_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map?picker=1")})],
+            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url(f"/map?picker=1&chat_id={chat_id}")})],
             [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
@@ -277,7 +320,7 @@ async def _render_flow_message(
 
 
 async def _render_location_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE, text_value: str) -> None:
-    await _render_flow_message(update, context, text_value, _location_keyboard())
+    await _render_flow_message(update, context, text_value, _location_keyboard(update.effective_chat.id))
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
