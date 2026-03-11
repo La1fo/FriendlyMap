@@ -176,14 +176,23 @@ async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: in
         lng = pick.longitude
         db.commit()
 
-    user_data = application.user_data.setdefault(user_id, {})
+    try:
+        user_data = application.user_data[user_id]
+    except KeyError:
+        user_data = application._user_data.setdefault(user_id, {})
+
     user_data["latitude"] = lat
     user_data["longitude"] = lng
+    logger.debug(
+        "Stored geo coordinates in user_data",
+        extra={"user_id": user_id, "chat_id": chat_id, "latitude": lat, "longitude": lng},
+    )
 
     with get_db_context() as db:
         LocationService.ensure_tags(db, TAG_CATALOG)
 
     add_location_handler._conversations[_conversation_key(chat_id, user_id)] = ASK_TAG_CATEGORY
+    logger.debug("Set conversation state to ASK_TAG_CATEGORY", extra={"user_id": user_id, "chat_id": chat_id})
     synthetic_update = _SyntheticUpdate(bot, user_id, chat_id)
 
     fake_context = type("Ctx", (), {"bot": bot, "user_data": user_data})()
