@@ -266,6 +266,40 @@ async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_LOCATION
 
 
+def _parse_webapp_coords(raw_payload: str) -> tuple[float | None, float | None]:
+    raw = (raw_payload or "").strip()
+    if not raw:
+        return None, None
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        source = payload
+        if isinstance(payload.get("point"), dict):
+            source = payload["point"]
+
+        lat_raw = source.get("latitude", source.get("lat"))
+        lng_raw = source.get("longitude", source.get("lng"))
+
+        try:
+            if lat_raw is not None and lng_raw is not None:
+                return float(lat_raw), float(lng_raw)
+        except (TypeError, ValueError):
+            pass
+
+    if "," in raw:
+        try:
+            raw_lat, raw_lng = raw.split(",", 1)
+            return float(raw_lat.strip()), float(raw_lng.strip())
+        except (TypeError, ValueError):
+            return None, None
+
+    return None, None
+
+
 async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     lat = None
@@ -275,21 +309,9 @@ async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lat = message.location.latitude
         lng = message.location.longitude
     elif message and message.web_app_data and message.web_app_data.data:
-        try:
-            payload = json.loads(message.web_app_data.data)
-            if payload.get("type") == "add_location_point":
-                lat = float(payload.get("latitude"))
-                lng = float(payload.get("longitude"))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            raw = (message.web_app_data.data or "").strip()
-            if "," in raw:
-                try:
-                    raw_lat, raw_lng = raw.split(",", 1)
-                    lat = float(raw_lat.strip())
-                    lng = float(raw_lng.strip())
-                except (TypeError, ValueError):
-                    lat = None
-                    lng = None
+        lat, lng = _parse_webapp_coords(message.web_app_data.data)
+    elif message and message.text:
+        lat, lng = _parse_webapp_coords(message.text)
 
     if lat is None or lng is None:
         await _delete_user_message(update, context)
@@ -480,6 +502,7 @@ add_location_handler = ConversationHandler(
         ASK_LOCATION: [
             MessageHandler(filters.LOCATION, get_coords),
             MessageHandler(filters.StatusUpdate.WEB_APP_DATA, get_coords),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, get_coords),
         ],
         ASK_TAG_CATEGORY: [
             CallbackQueryHandler(open_tag_category, pattern=f"^{CB_TAG_CAT}"),
