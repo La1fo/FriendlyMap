@@ -1,6 +1,14 @@
 import json
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+    WebAppInfo,
+)
 from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
@@ -33,6 +41,7 @@ CB_TAG_SKIP = "addloc_tag_skip"
 CB_TAG_CLEAR = "addloc_tag_clear"
 CB_TAG_BACK = "addloc_tag_back"
 
+CANCEL_TEXT = "❌ Отменить"
 MAX_SELECTED_TAGS = 5
 TAG_CATALOG = {
     "Еда": ["кафе", "ресторан", "бар", "фастфуд", "пекарня"],
@@ -47,24 +56,27 @@ TAG_CATALOG = {
 
 
 def _cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)]])
 
 
 def _description_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("⏭ Пропустить описание", callback_data=CB_SKIP_DESC)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
 
 
-def _location_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+def _location_reply_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
         [
-            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map?picker=1")})],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
-        ]
+            [KeyboardButton("🗺️ Открыть карту", web_app=WebAppInfo(url=build_webapp_url("/map?picker=1")))],
+            [KeyboardButton(CANCEL_TEXT)],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        selective=True,
     )
 
 
@@ -72,7 +84,7 @@ def _photo_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("✅ Подтвердить", callback_data=CB_PHOTO_DONE)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
 
@@ -81,7 +93,7 @@ def _confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("✅ Подтвердить", callback_data=CB_CONFIRM)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
 
@@ -101,7 +113,7 @@ def _tag_categories_keyboard(selected_count: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(f"✅ Готово ({selected_count}/{MAX_SELECTED_TAGS})", callback_data=CB_TAG_DONE)],
             [InlineKeyboardButton("🧹 Очистить всё", callback_data=CB_TAG_CLEAR)],
             [InlineKeyboardButton("⏭ Пропустить", callback_data=CB_TAG_SKIP)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
     return InlineKeyboardMarkup(rows)
@@ -118,7 +130,7 @@ def _tag_pick_keyboard(category: str, tags: list[Tag], selected_ids: set[int]) -
             [InlineKeyboardButton("◀️ Назад к категориям", callback_data=CB_TAG_BACK)],
             [InlineKeyboardButton("✅ Готово", callback_data=CB_TAG_DONE)],
             [InlineKeyboardButton("🧹 Очистить всё", callback_data=CB_TAG_CLEAR)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
     return InlineKeyboardMarkup(rows)
@@ -134,6 +146,7 @@ def _clear_flow_data(context: ContextTypes.DEFAULT_TYPE) -> None:
         "selected_tag_ids",
         "current_tag_category",
         "add_location_message_id",
+        "add_location_geo_message_id",
     ):
         context.user_data.pop(key, None)
 
@@ -176,6 +189,45 @@ async def _render_flow_message(
     source = update.callback_query.message if update.callback_query else update.message
     sent = await source.reply_text(text_value, reply_markup=reply_markup)
     context.user_data["add_location_message_id"] = sent.message_id
+
+
+async def _render_location_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE, text_value: str) -> None:
+    await _render_flow_message(update, context, text_value, _cancel_keyboard())
+
+    chat_id = update.effective_chat.id
+    geo_message_id = context.user_data.get("add_location_geo_message_id")
+    if geo_message_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=geo_message_id)
+        except Exception:
+            pass
+
+    prompt = await context.bot.send_message(
+        chat_id=chat_id,
+        text="🗺️ Открой карту, поставь метку и нажми «Подтвердить точку».",
+        reply_markup=_location_reply_keyboard(),
+    )
+    context.user_data["add_location_geo_message_id"] = prompt.message_id
+
+
+async def _remove_location_keyboard(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    confirmation_text: str | None = None,
+) -> None:
+    chat_id = update.effective_chat.id
+    geo_message_id = context.user_data.pop("add_location_geo_message_id", None)
+    if geo_message_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=geo_message_id)
+        except Exception:
+            pass
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=("✅ Точка получена" if confirmation_text is None else confirmation_text),
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -245,11 +297,10 @@ async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["loc_description"] = update.message.text.strip()
     await _delete_user_message(update, context)
-    await _render_flow_message(
+    await _render_location_prompt(
         update,
         context,
         "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
-        _location_keyboard(),
     )
     return ASK_LOCATION
 
@@ -257,11 +308,10 @@ async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.answer()
     context.user_data["loc_description"] = None
-    await _render_flow_message(
+    await _render_location_prompt(
         update,
         context,
         "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
-        _location_keyboard(),
     )
     return ASK_LOCATION
 
@@ -315,17 +365,17 @@ async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if lat is None or lng is None:
         await _delete_user_message(update, context)
-        await _render_flow_message(
+        await _render_location_prompt(
             update,
             context,
             "⚠️ Нужна геопозиция. Открой карту, поставь метку и нажми «Подтвердить точку».",
-            _location_keyboard(),
         )
         return ASK_LOCATION
 
     context.user_data["latitude"] = lat
     context.user_data["longitude"] = lng
     await _delete_user_message(update, context)
+    await _remove_location_keyboard(update, context)
 
     with get_db_context() as db:
         LocationService.ensure_tags(db, TAG_CATALOG)
@@ -466,6 +516,7 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+    await _remove_location_keyboard(update, context)
     _clear_flow_data(context)
     await _show_main_menu(update, context)
     return ConversationHandler.END
@@ -482,6 +533,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+    await _remove_location_keyboard(update, context, confirmation_text="Операция отменена")
     _clear_flow_data(context)
     await _show_main_menu(update, context)
     return ConversationHandler.END
@@ -500,6 +552,7 @@ add_location_handler = ConversationHandler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
         ],
         ASK_LOCATION: [
+            MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
             MessageHandler(filters.LOCATION, get_coords),
             MessageHandler(filters.StatusUpdate.WEB_APP_DATA, get_coords),
             MessageHandler(filters.TEXT & ~filters.COMMAND, get_coords),
