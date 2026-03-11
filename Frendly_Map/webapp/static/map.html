@@ -29,6 +29,10 @@
             <p class="tags-panel-title">Выберите теги:</p>
             <div id="tagFilters" class="tag-filters"></div>
         </div>
+        <div id="pickerPanel" class="tags-panel hidden">
+            <p class="tags-panel-title">Режим выбора точки для добавления локации</p>
+            <button id="confirmPointBtn" class="btn">✅ Подтвердить точку</button>
+        </div>
     </section>
 
     <div id="statusBar" class="status hidden"></div>
@@ -69,6 +73,7 @@ window.MAP_DEFAULTS = {
   lng: {{ default_lng }},
   zoom: {{ default_zoom }}
 };
+window.MAP_PICKER_MODE = {{ 'true' if picker_mode else 'false' }};
 </script>
 <script src="/static/script.js"></script>
 </body>

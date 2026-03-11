@@ -1,3 +1,5 @@
+import json
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import (
@@ -14,6 +16,7 @@ from bot.keyboards.main_menu import get_main_menu
 from bot.models.tag import Tag
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.location_service import LocationService
+from bot.utils.section_banners import get_section_banner, send_section_banner
 from bot.utils.users import get_or_create_user
 from bot.utils.webapp import build_webapp_url
 
@@ -59,7 +62,7 @@ def _description_keyboard() -> InlineKeyboardMarkup:
 def _location_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map")})],
+            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map?picker=1")})],
             [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
         ]
     )
@@ -176,17 +179,16 @@ async def _render_flow_message(
 
 
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_user.id
-    menu_id = context.user_data.get("main_menu_message_id")
-    if menu_id:
-        try:
-            await context.bot.edit_message_text("Главное меню:", chat_id=chat_id, message_id=menu_id, reply_markup=get_main_menu(chat_id))
-            return
-        except BadRequest:
-            pass
-
-    sent = await context.bot.send_message(chat_id=chat_id, text="Главное меню:", reply_markup=get_main_menu(chat_id))
-    context.user_data["main_menu_message_id"] = sent.message_id
+    banner = get_section_banner("main_menu")
+    caption = f"<b>{banner['title']}</b>\n\n{banner['description']}"
+    await send_section_banner(
+        update,
+        context,
+        "main_menu",
+        caption,
+        reply_markup=get_main_menu(update.effective_user.id),
+        store_message_key="main_menu_message_id",
+    )
 
 
 async def _render_tag_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -265,19 +267,35 @@ async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.location:
+    message = update.message
+    lat = None
+    lng = None
+
+    if message and message.location:
+        lat = message.location.latitude
+        lng = message.location.longitude
+    elif message and message.web_app_data and message.web_app_data.data:
+        try:
+            payload = json.loads(message.web_app_data.data)
+            if payload.get("type") == "add_location_point":
+                lat = float(payload.get("latitude"))
+                lng = float(payload.get("longitude"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            lat = None
+            lng = None
+
+    if lat is None or lng is None:
         await _delete_user_message(update, context)
         await _render_flow_message(
             update,
             context,
-            "⚠️ Нужна геопозиция. Открой карту, выбери точку и отправь её.",
+            "⚠️ Нужна геопозиция. Открой карту, поставь метку и нажми «Подтвердить точку».",
             _location_keyboard(),
         )
         return ASK_LOCATION
 
-    loc = update.message.location
-    context.user_data["latitude"] = loc.latitude
-    context.user_data["longitude"] = loc.longitude
+    context.user_data["latitude"] = lat
+    context.user_data["longitude"] = lng
     await _delete_user_message(update, context)
 
     with get_db_context() as db:
@@ -454,7 +472,10 @@ add_location_handler = ConversationHandler(
             CallbackQueryHandler(skip_description, pattern=f"^{CB_SKIP_DESC}$"),
             MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
         ],
-        ASK_LOCATION: [MessageHandler(filters.LOCATION, get_coords)],
+        ASK_LOCATION: [
+            MessageHandler(filters.LOCATION, get_coords),
+            MessageHandler(filters.StatusUpdate.WEB_APP_DATA, get_coords),
+        ],
         ASK_TAG_CATEGORY: [
             CallbackQueryHandler(open_tag_category, pattern=f"^{CB_TAG_CAT}"),
             CallbackQueryHandler(tags_done, pattern=f"^{CB_TAG_DONE}$"),

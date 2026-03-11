@@ -23,8 +23,10 @@ function initTelegramWebApp() {
 let map;
 let routeLine;
 let userMarker;
+let pickerMarker;
 let selectedLocation = null;
 let userCoords = null;
+let pickerCoords = null;
 
 const markersById = new Map();
 let allLocations = [];
@@ -79,6 +81,8 @@ function initDom() {
   els.clearRouteBtn = document.getElementById("clearRouteBtn");
   els.closeDetailBtn = document.getElementById("closeDetailBtn");
   els.statusBar = document.getElementById("statusBar");
+  els.pickerPanel = document.getElementById("pickerPanel");
+  els.confirmPointBtn = document.getElementById("confirmPointBtn");
 }
 
 function initMap() {
@@ -91,6 +95,43 @@ function initMap() {
     attribution: "&copy; OpenStreetMap contributors",
     maxZoom: 19,
   }).addTo(map);
+
+  map.whenReady(() => {
+    setTimeout(() => map.invalidateSize(), 100);
+  });
+  window.addEventListener("resize", () => map.invalidateSize());
+
+  if (window.MAP_PICKER_MODE) {
+    map.on("click", (e) => {
+      pickerCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
+      if (pickerMarker) map.removeLayer(pickerMarker);
+      pickerMarker = L.marker([pickerCoords.lat, pickerCoords.lng]).addTo(map).bindPopup("Выбранная точка");
+      pickerMarker.openPopup();
+      showStatus("Точка выбрана. Нажмите «Подтвердить точку»", true);
+    });
+  }
+}
+
+function confirmPickerPoint() {
+  if (!pickerCoords) {
+    showStatus("Сначала поставьте метку на карте", true);
+    return;
+  }
+
+  const payload = JSON.stringify({
+    type: "add_location_point",
+    latitude: pickerCoords.lat,
+    longitude: pickerCoords.lng,
+  });
+
+  const tg = window.Telegram?.WebApp;
+  if (tg?.sendData) {
+    tg.sendData(payload);
+    tg.close();
+    return;
+  }
+
+  showStatus("Точка выбрана, но это не Telegram WebApp", true);
 }
 
 async function apiJson(url) {
@@ -345,6 +386,10 @@ function bindEvents() {
   els.buildRouteBtn.addEventListener("click", buildRoute);
   els.clearRouteBtn.addEventListener("click", clearRoute);
   els.closeDetailBtn.addEventListener("click", closeDetail);
+  if (window.MAP_PICKER_MODE && els.confirmPointBtn) {
+    els.pickerPanel.classList.remove("hidden");
+    els.confirmPointBtn.addEventListener("click", confirmPickerPoint);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

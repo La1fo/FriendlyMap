@@ -37,6 +37,7 @@ async def on_startup():
 
 @app.get("/map")
 async def map_page(request: Request):
+    picker_mode = request.query_params.get("picker") == "1"
     return templates.TemplateResponse(
         "map.html",
         {
@@ -44,6 +45,7 @@ async def map_page(request: Request):
             "default_lat": settings.DEFAULT_MAP_LAT,
             "default_lng": settings.DEFAULT_MAP_LNG,
             "default_zoom": settings.DEFAULT_MAP_ZOOM,
+            "picker_mode": picker_mode,
         },
     )
 
