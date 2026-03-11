@@ -38,6 +38,21 @@ async def on_startup():
 @app.get("/map")
 async def map_page(request: Request):
     picker_mode = request.query_params.get("picker") == "1"
+
+    focus_lat = request.query_params.get("focus_lat")
+    focus_lng = request.query_params.get("focus_lng")
+    focus_name = request.query_params.get("focus_name") or "Точка"
+    focus_point = None
+    if focus_lat and focus_lng:
+        try:
+            focus_point = {
+                "lat": float(focus_lat),
+                "lng": float(focus_lng),
+                "name": focus_name,
+            }
+        except ValueError:
+            focus_point = None
+
     return templates.TemplateResponse(
         "map.html",
         {
@@ -46,6 +61,7 @@ async def map_page(request: Request):
             "default_lng": settings.DEFAULT_MAP_LNG,
             "default_zoom": settings.DEFAULT_MAP_ZOOM,
             "picker_mode": picker_mode,
+            "focus_point": focus_point,
         },
     )
 

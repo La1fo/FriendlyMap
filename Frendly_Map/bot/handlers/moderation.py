@@ -1,5 +1,6 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
+from urllib.parse import quote_plus
 
 from datetime import datetime
 from bot.database import get_db_context
@@ -7,6 +8,7 @@ from bot.models.location import Location
 from bot.models.photo import Photo
 from bot.models.user import User
 from bot.utils.common import is_admin
+from bot.utils.webapp import build_webapp_url
 from bot.services.achievements_manager import AchievementsManager
 from bot.handlers.moderation_menu import moderation_menu
 from bot.services.moderation_service import send_pending_locations
@@ -123,6 +125,16 @@ async def show_location_detail(update: Update, context: ContextTypes.DEFAULT_TYP
         [
             InlineKeyboardButton("✔️ Одобрить", callback_data=f"approve_{loc.id}"),
             InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{loc.id}"),
+        ],
+        [
+            InlineKeyboardButton(
+                "🗺️ Открыть на карте",
+                web_app={
+                    "url": build_webapp_url(
+                        f"/map?focus_lat={loc.latitude}&focus_lng={loc.longitude}&focus_name={quote_plus(loc.name)}"
+                    )
+                },
+            )
         ],
         [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
     ])

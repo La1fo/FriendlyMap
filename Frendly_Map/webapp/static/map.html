@@ -14,7 +14,10 @@
             <h1>Friendly Map</h1>
             <p>Найди удобные места рядом</p>
         </div>
-        <button id="findMeBtn" class="btn">📍 Я здесь</button>
+        <div class="toolbar-actions">
+            <button id="findMeBtn" class="btn">📍 Я здесь</button>
+            <button id="confirmPointBtn" class="btn hidden">✅ Подтвердить точку</button>
+        </div>
     </header>
 
     <section class="toolbar">
@@ -28,10 +31,6 @@
         <div id="tagFiltersPanel" class="tags-panel hidden">
             <p class="tags-panel-title">Выберите теги:</p>
             <div id="tagFilters" class="tag-filters"></div>
-        </div>
-        <div id="pickerPanel" class="tags-panel hidden">
-            <p class="tags-panel-title">Режим выбора точки для добавления локации</p>
-            <button id="confirmPointBtn" class="btn">✅ Подтвердить точку</button>
         </div>
     </section>
 
@@ -74,6 +73,7 @@ window.MAP_DEFAULTS = {
   zoom: {{ default_zoom }}
 };
 window.MAP_PICKER_MODE = {{ 'true' if picker_mode else 'false' }};
+window.MAP_FOCUS_POINT = {{ focus_point|tojson if focus_point else 'null' }};
 </script>
 <script src="/static/script.js"></script>
 </body>
