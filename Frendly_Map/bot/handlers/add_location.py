@@ -62,7 +62,10 @@ def _description_keyboard() -> InlineKeyboardMarkup:
 
 def _location_reply_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [[KeyboardButton("🗺️ Открыть карту", web_app=WebAppInfo(url=build_webapp_url("/map?picker=1")))]],
+        [
+            [KeyboardButton("🗺️ Открыть карту", web_app=WebAppInfo(url=build_webapp_url("/map?picker=1")))],
+            [KeyboardButton(CANCEL_TEXT)],
+        ],
         resize_keyboard=True,
         one_time_keyboard=True,
         selective=True,
@@ -295,6 +298,8 @@ def _parse_webapp_coords(raw_payload: str) -> tuple[float | None, float | None]:
         source = payload
         if isinstance(payload.get("point"), dict):
             source = payload["point"]
+        elif isinstance(payload.get("coords"), dict):
+            source = payload["coords"]
 
         lat_raw = source.get("latitude", source.get("lat"))
         lng_raw = source.get("longitude", source.get("lng"))
@@ -514,6 +519,7 @@ add_location_handler = ConversationHandler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
         ],
         ASK_LOCATION: [
+            MessageHandler(filters.Regex(f"^{CANCEL_TEXT}$"), cancel),
             MessageHandler(filters.LOCATION, get_coords),
             MessageHandler(filters.StatusUpdate.WEB_APP_DATA, get_coords),
             MessageHandler(filters.TEXT & ~filters.COMMAND, get_coords),
