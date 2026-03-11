@@ -27,7 +27,7 @@ class LeaderboardService:
     def get_top_users(db: Session, limit: int = 10):
         return (
             db.query(User)
-            .order_by(User.points.desc(), User.id.asc())
+            .order_by(User.pts.desc(), User.id.asc())
             .limit(limit)
             .all()
         )
@@ -39,7 +39,7 @@ class LeaderboardService:
             return 0, 0
         higher_count = (
             db.query(func.count(User.id))
-            .filter(User.points > user.points)
+            .filter(User.pts > user.pts)
             .scalar()
         )
         total = db.query(func.count(User.id)).scalar()

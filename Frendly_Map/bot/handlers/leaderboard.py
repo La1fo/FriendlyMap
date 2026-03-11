@@ -28,11 +28,11 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    lines = ["🏆 Таблица лидеров (points):"]
+    lines = ["🏆 Таблица лидеров (GP):"]
     for idx, user in enumerate(users, start=1):
         name = user.username or user.first_name or "Без имени"
-        rank_title = LeaderboardService.get_rank_title(user.points, idx)
-        lines.append(f"{idx}. {name} — {user.points} ⭐ ({rank_title})")
+        rank_title = LeaderboardService.get_rank_title(user.pts, idx)
+        lines.append(f"{idx}. {name} — {user.pts} 📍 GP ({rank_title})")
 
     if position and total and current_user:
         me = update.effective_user
@@ -40,8 +40,8 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.extend([
             "",
             f"📍 {name}: место {position} из {total}",
-            f"⭐ Твои points: {current_user.points}",
-            f"🏷️ Твой ранг: {LeaderboardService.get_rank_title(current_user.points, position)}",
+            f"📍 Твои GP: {current_user.pts}",
+            f"🏷️ Твой ранг: {LeaderboardService.get_rank_title(current_user.pts, position)}",
         ])
 
     caption = f"{banner_caption}\n\n" + "\n".join(lines)

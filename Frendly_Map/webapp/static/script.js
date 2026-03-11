@@ -145,7 +145,7 @@ function confirmPickerPoint() {
   if (tg?.sendData) {
     tg.sendData(payload);
     showStatus("Точка отправлена в бот", true);
-    tg.close();
+    setTimeout(() => tg.close(), 250);
     return;
   }
 

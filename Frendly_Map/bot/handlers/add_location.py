@@ -281,8 +281,15 @@ async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lat = float(payload.get("latitude"))
                 lng = float(payload.get("longitude"))
         except (TypeError, ValueError, json.JSONDecodeError):
-            lat = None
-            lng = None
+            raw = (message.web_app_data.data or "").strip()
+            if "," in raw:
+                try:
+                    raw_lat, raw_lng = raw.split(",", 1)
+                    lat = float(raw_lat.strip())
+                    lng = float(raw_lng.strip())
+                except (TypeError, ValueError):
+                    lat = None
+                    lng = None
 
     if lat is None or lng is None:
         await _delete_user_message(update, context)
