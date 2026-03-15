@@ -36,5 +36,10 @@ def get_rank_progress(points: int) -> tuple[int, int]:
     return points // POINTS_PER_RANK, points % POINTS_PER_RANK
 
 
+def get_rank_points(points: int) -> int:
+    _, points_in_rank = get_rank_progress(points)
+    return points_in_rank
+
+
 def get_rank_title(points: int, leaderboard_position: int | None = None) -> str:
     return get_user_rank_display(points, leaderboard_position)

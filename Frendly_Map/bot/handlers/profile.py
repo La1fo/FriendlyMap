@@ -4,7 +4,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 from bot.database import get_db_context
 from bot.models.user import User
 from bot.services.leaderboard_service import LeaderboardService
-from bot.utils.rank import get_user_rank_display
+from bot.utils.rank import get_rank_points, get_user_rank_display
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
 
@@ -30,8 +30,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>{banner['title']}</b>\n{banner['description']}\n\n"
         f"🌐 Ник: @{user.username or 'Не указан'}\n"
         f"🪙 Монеты: {user.points}\n"
-        f"📍 GP: {user.pts}\n"
-        f"🏅 Ранг: {get_user_rank_display(user.points, position)}\n"
+        f"📍 GP: {get_rank_points(user.pts)}\n"
+        f"🏅 Ранг: {get_user_rank_display(user.pts, position)}\n"
         f"📍 Одобрено локаций: {user.approved_locations}"
     )
 
