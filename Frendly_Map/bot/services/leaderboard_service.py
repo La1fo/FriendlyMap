@@ -16,9 +16,9 @@ class LeaderboardService:
             return
 
         samples = [
-            User(username="Explorer", first_name="Explorer", total_gp=120, pts=120, points=300),
-            User(username="Mapper", first_name="Mapper", total_gp=260, pts=260, points=550),
-            User(username="Master", first_name="Master", total_gp=520, pts=520, points=900),
+            User(username="Explorer", first_name="Explorer", total_gp=120, points=300),
+            User(username="Mapper", first_name="Mapper", total_gp=260, points=550),
+            User(username="Master", first_name="Master", total_gp=520, points=900),
         ]
         db.add_all(samples)
         db.commit()

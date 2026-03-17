@@ -4,7 +4,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 SCHEMA_VERSION_TABLE = "schema_version"
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 def _ensure_schema_version_table(engine: Engine) -> None:
@@ -38,13 +38,17 @@ def _ensure_total_gp_column(engine: Engine) -> None:
 
         # Backfill canonical total_gp from historical fields (priority: pts -> points -> 0)
         if "pts" in columns:
-            conn.execute(text("UPDATE users SET total_gp = COALESCE(total_gp, 0) + CASE WHEN total_gp = 0 THEN COALESCE(pts, 0) ELSE 0 END"))
+            conn.execute(
+                text(
+                    "UPDATE users SET total_gp = CASE WHEN total_gp = 0 THEN COALESCE(pts, 0) ELSE total_gp END"
+                )
+            )
         elif "points" in columns:
-            conn.execute(text("UPDATE users SET total_gp = COALESCE(total_gp, 0) + CASE WHEN total_gp = 0 THEN COALESCE(points, 0) ELSE 0 END"))
-
-        # keep compatibility mirror for old code paths during transition
-        if "pts" in columns:
-            conn.execute(text("UPDATE users SET pts = total_gp WHERE COALESCE(pts, -1) <> total_gp"))
+            conn.execute(
+                text(
+                    "UPDATE users SET total_gp = CASE WHEN total_gp = 0 THEN COALESCE(points, 0) ELSE total_gp END"
+                )
+            )
 
 
 def _create_site_views(engine: Engine) -> None:
@@ -53,6 +57,7 @@ def _create_site_views(engine: Engine) -> None:
         conn.execute(text("DROP VIEW IF EXISTS site_public_users"))
         conn.execute(text("DROP VIEW IF EXISTS site_leaderboard"))
         conn.execute(text("DROP VIEW IF EXISTS site_achievements_overview"))
+        conn.execute(text("DROP VIEW IF EXISTS site_auth_users"))
 
         conn.execute(
             text(
@@ -65,30 +70,9 @@ def _create_site_views(engine: Engine) -> None:
                     u.total_gp AS total_gp,
                     (CAST(u.total_gp / 100 AS INTEGER) + 1) AS rank_level,
                     (u.total_gp % 100) AS gp_in_rank,
-                    ('Ранг ' || ((CAST(u.total_gp / 100 AS INTEGER) + 1))) AS rank_name,
+                    ('Ранг ' || (CAST(u.total_gp / 100 AS INTEGER) + 1)) AS rank_name,
                     u.approved_locations AS approved_locations
                 FROM users u
-                """
-            )
-        )
-
-        conn.execute(
-            text(
-                """
-                CREATE VIEW site_public_locations AS
-                SELECT
-                    l.id,
-                    l.name,
-                    l.description,
-                    l.latitude,
-                    l.longitude,
-                    l.address,
-                    l.created_at,
-                    u.id AS author_id,
-                    COALESCE(NULLIF(u.username, ''), u.first_name, 'Пользователь') AS author_name
-                FROM locations l
-                JOIN users u ON u.id = l.user_id
-                WHERE l.status = 'approved'
                 """
             )
         )
@@ -103,9 +87,22 @@ def _create_site_views(engine: Engine) -> None:
                     u.total_gp AS total_gp,
                     (CAST(u.total_gp / 100 AS INTEGER) + 1) AS rank_level,
                     (u.total_gp % 100) AS gp_in_rank,
-                    ('Ранг ' || ((CAST(u.total_gp / 100 AS INTEGER) + 1))) AS rank_name,
+                    ('Ранг ' || (CAST(u.total_gp / 100 AS INTEGER) + 1)) AS rank_name,
                     ROW_NUMBER() OVER (ORDER BY u.total_gp DESC, u.id ASC) AS position
                 FROM users u
+                """
+            )
+        )
+
+        conn.execute(
+            text(
+                """
+                CREATE VIEW site_public_locations AS
+                SELECT
+                    l.id AS location_id,
+                    l.user_id AS user_id
+                FROM locations l
+                WHERE l.status = 'approved'
                 """
             )
         )
@@ -118,11 +115,27 @@ def _create_site_views(engine: Engine) -> None:
                     a.id AS achievement_id,
                     a.code,
                     a.name,
-                    a.type,
-                    COUNT(ua.id) FILTER (WHERE ua.is_completed = TRUE) AS completed_count
+                    a.description,
+                    COUNT(ua.id) FILTER (WHERE ua.is_completed = TRUE) AS completed_count,
+                    a.is_seasonal AS is_seasonal
                 FROM achievements a
                 LEFT JOIN user_achievements ua ON ua.achievement_id = a.id
-                GROUP BY a.id, a.code, a.name, a.type
+                GROUP BY a.id, a.code, a.name, a.description, a.is_seasonal
+                """
+            )
+        )
+
+        conn.execute(
+            text(
+                """
+                CREATE VIEW site_auth_users AS
+                SELECT
+                    u.id AS user_id,
+                    COALESCE(NULLIF(u.username, ''), u.first_name, 'Пользователь') AS username,
+                    u.telegram_id AS telegram_id,
+                    u.email AS email,
+                    u.password_hash AS hashed_password
+                FROM users u
                 """
             )
         )
@@ -137,7 +150,10 @@ def run_migrations(engine: Engine) -> None:
     _create_site_views(engine)
 
     with engine.begin() as conn:
-        conn.execute(text(f"INSERT INTO {SCHEMA_VERSION_TABLE}(version) VALUES (:version)"), {"version": CURRENT_SCHEMA_VERSION})
+        conn.execute(
+            text(f"INSERT INTO {SCHEMA_VERSION_TABLE}(version) VALUES (:version)"),
+            {"version": CURRENT_SCHEMA_VERSION},
+        )
 
 
 def assert_schema_version(engine: Engine) -> None:

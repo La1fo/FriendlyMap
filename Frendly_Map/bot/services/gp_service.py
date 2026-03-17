@@ -12,8 +12,6 @@ class GPService:
             return None
 
         user.total_gp = max(int(user.total_gp or 0) + int(delta), 0)
-        # compatibility mirror for legacy paths
-        user.pts = user.total_gp
         db.commit()
         db.refresh(user)
         return get_rank_progress(user.total_gp)

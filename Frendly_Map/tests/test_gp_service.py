@@ -12,7 +12,7 @@ def test_add_gp_rollover_from_99_to_102(tmp_path: Path):
     init_schema(engine)
 
     with SessionLocal() as db:
-        db.add(User(id=10, telegram_id=10, username="u", total_gp=99, pts=99, points=0))
+        db.add(User(id=10, telegram_id=10, username="u", total_gp=99, points=0))
         db.commit()
 
     with SessionLocal() as db:

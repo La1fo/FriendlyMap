@@ -209,7 +209,6 @@ class AchievementsManager:
         user.points += achievement.points_reward
         if achievement.type == "ranked":
             user.total_gp = max(int(user.total_gp or 0) + int(achievement.pts_reward or 0), 0)
-            user.pts = user.total_gp
 
     def format_completion_message(self, achievements: Iterable[Achievement]) -> str:
         lines = [

@@ -43,6 +43,8 @@ docker compose up --build
 - `ADMIN_IDS` — список ID администраторов через запятую
 - `SEED_SAMPLE_DATA` — добавлять тестовых пользователей для лидерборда (по умолчанию `false`)
 - `WEBAPP_ALLOWED_ORIGINS` — список разрешённых CORS origin через запятую (например `https://app.example.com,https://miniapp.example.com`)
+- `WEBAPP_ALLOWED_METHODS` — явный список CORS методов (по умолчанию `GET,POST,OPTIONS`)
+- `WEBAPP_ALLOWED_HEADERS` — явный список CORS заголовков (по умолчанию `Authorization,Content-Type,X-Requested-With`)
 
 
 ## Telegram Mini App / Web App запуск
@@ -103,6 +105,7 @@ python -m bot.main
 - `site_public_users`
 - `site_public_locations`
 - `site_achievements_overview`
+- `site_auth_users`
 
 Сайт должен использовать read-only DB роль (`SELECT` only) на этих view и нужных публичных таблицах.
 
@@ -112,6 +115,7 @@ python -m bot.main
 - Бот — единственный writer-сервис для `total_gp`.
 - Сайт читает ранги из read-only view (`site_public_users`, `site_leaderboard`).
 - Поля `rank_level`, `gp_in_rank`, `rank_name` вычисляются, а не хранятся как канонические колонки.
+- `users.points` — отдельная валюта (монеты) и не участвует в расчёте ранга GP.
 
 Формула:
 

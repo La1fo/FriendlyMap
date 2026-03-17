@@ -11,6 +11,8 @@ from shared.models.location import Location
 from shared.models.location_tag import LocationTag
 from shared.models.photo import Photo
 from shared.models.tag import Tag
+from shared.models.user import User
+from shared.rank import get_rank_progress
 from webapp.config import settings
 
 router = APIRouter()
@@ -44,6 +46,8 @@ async def get_approved_locations(db: Session = Depends(get_db_session)):
     result = []
 
     for loc in locations:
+        author = db.get(User, loc.user_id)
+        rank = get_rank_progress(author.total_gp if author else 0)
         result.append(
             {
                 "id": loc.id,
@@ -55,6 +59,13 @@ async def get_approved_locations(db: Session = Depends(get_db_session)):
                 "created_at": loc.created_at.isoformat() if loc.created_at else None,
                 "tags": _load_location_tags(db, loc.id),
                 "photos": _load_location_photos(db, loc.id),
+                "author": {
+                    "user_id": author.id if author else None,
+                    "total_gp": rank["total_gp"],
+                    "rank_level": rank["rank_level"],
+                    "gp_in_rank": rank["gp_in_rank"],
+                    "rank_name": rank["rank_name"],
+                },
             }
         )
 

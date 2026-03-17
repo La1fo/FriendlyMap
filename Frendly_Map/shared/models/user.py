@@ -16,6 +16,7 @@ class User(Base):
     password_hash = Column(String, nullable=True)
     email_verified = Column(Boolean, default=False)
 
+    # Deprecated legacy GP column (kept temporarily for backward DB compatibility)
     pts = Column(Integer, default=0)
     total_gp = Column(Integer, default=0, nullable=False)
     points = Column(Integer, default=0)
