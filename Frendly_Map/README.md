@@ -107,6 +107,46 @@ python -m bot.main
 - `site_achievements_overview`
 - `site_auth_users`
 
+Финальный контракт VIEW:
+
+- `site_leaderboard`:
+  - `user_id`
+  - `username`
+  - `total_gp`
+  - `rank_level`
+  - `gp_in_rank`
+  - `rank_name`
+  - `position`
+
+- `site_public_users`:
+  - `user_id`
+  - `username`
+  - `telegram_id`
+  - `total_gp`
+  - `rank_level`
+  - `gp_in_rank`
+  - `rank_name`
+  - `approved_locations`
+
+- `site_public_locations`:
+  - `location_id`
+  - `user_id`
+
+- `site_achievements_overview`:
+  - `achievement_id`
+  - `code`
+  - `name`
+  - `description`
+  - `completed_count`
+  - `is_seasonal`
+
+- `site_auth_users`:
+  - `user_id`
+  - `username`
+  - `telegram_id`
+  - `email`
+  - `hashed_password`
+
 Сайт должен использовать read-only DB роль (`SELECT` only) на этих view и нужных публичных таблицах.
 
 ## Ranking system contract
@@ -116,6 +156,15 @@ python -m bot.main
 - Сайт читает ранги из read-only view (`site_public_users`, `site_leaderboard`).
 - Поля `rank_level`, `gp_in_rank`, `rank_name` вычисляются, а не хранятся как канонические колонки.
 - `users.points` — отдельная валюта (монеты) и не участвует в расчёте ранга GP.
+
+### Migration / backfill plan
+
+1. `schema_version` хранит применённые версии миграции.
+2. На миграции рангов:
+   - добавить `users.total_gp`, если поля нет;
+   - выполнить backfill `total_gp` из legacy `pts`, fallback из `points` только когда `total_gp = 0`.
+3. Пересоздать все обязательные `site_*` VIEW.
+4. После этого ранговая логика writer-side использует только `total_gp`.
 
 Формула:
 
