@@ -17,6 +17,7 @@ class User(Base):
     email_verified = Column(Boolean, default=False)
 
     pts = Column(Integer, default=0)
+    total_gp = Column(Integer, default=0, nullable=False)
     points = Column(Integer, default=0)
 
     approved_locations = Column(Integer, default=0)

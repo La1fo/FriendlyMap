@@ -1,14 +1,17 @@
-from bot.utils.rank import get_rank_points, get_user_rank_display
+from shared.rank import get_rank_progress
 
 
-def test_rank_points_reset_every_100_gp():
-    assert get_rank_points(0) == 0
-    assert get_rank_points(99) == 99
-    assert get_rank_points(100) == 0
-    assert get_rank_points(101) == 1
-    assert get_rank_points(260) == 60
-
-
-def test_rank_grows_when_total_gp_grows():
-    assert get_user_rank_display(99) == "ИССЛЕДОВАТЕЛЬ 1"
-    assert get_user_rank_display(100) == "ИССЛЕДОВАТЕЛЬ 2"
+def test_rank_progress_boundaries():
+    assert get_rank_progress(0) == {
+        "total_gp": 0,
+        "rank_level": 1,
+        "gp_in_rank": 0,
+        "gp_to_next_rank": 100,
+        "rank_name": "Ранг 1",
+    }
+    assert get_rank_progress(99)["rank_level"] == 1
+    assert get_rank_progress(99)["gp_in_rank"] == 99
+    assert get_rank_progress(100)["rank_level"] == 2
+    assert get_rank_progress(100)["gp_in_rank"] == 0
+    assert get_rank_progress(102)["rank_level"] == 2
+    assert get_rank_progress(102)["gp_in_rank"] == 2

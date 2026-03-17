@@ -105,3 +105,21 @@ python -m bot.main
 - `site_achievements_overview`
 
 Сайт должен использовать read-only DB роль (`SELECT` only) на этих view и нужных публичных таблицах.
+
+## Ranking system contract
+
+- Канонический источник истины для рангов: `users.total_gp`.
+- Бот — единственный writer-сервис для `total_gp`.
+- Сайт читает ранги из read-only view (`site_public_users`, `site_leaderboard`).
+- Поля `rank_level`, `gp_in_rank`, `rank_name` вычисляются, а не хранятся как канонические колонки.
+
+Формула:
+
+- `rank_level = floor(total_gp / 100) + 1`
+- `gp_in_rank = total_gp % 100`
+- `rank_name = "Ранг {rank_level}"`
+
+Примеры:
+
+- `total_gp=99` → `rank_level=1`, `gp_in_rank=99`
+- `total_gp=102` → `rank_level=2`, `gp_in_rank=2`

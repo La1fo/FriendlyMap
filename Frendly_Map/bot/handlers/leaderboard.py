@@ -4,7 +4,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 from bot.database import get_db_context
 from bot.models.user import User
 from bot.services.leaderboard_service import LeaderboardService
-from bot.utils.rank import get_rank_points
+from shared.rank import get_rank_progress
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
 
@@ -32,11 +32,12 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = ["🏆 Таблица лидеров (GP):"]
     for idx, user in enumerate(users, start=1):
         name = user.username or user.first_name or "Без имени"
-        rank_title = LeaderboardService.get_rank_title(user.pts, idx)
-        rank_points = get_rank_points(user.pts)
+        rank = get_rank_progress(user.total_gp)
         if idx > 1:
             lines.append("────────────")
-        lines.append(f"{idx}. {name} — {rank_points} 📍 GP ({rank_title})")
+        lines.append(
+            f"{idx}. {name} — Общий GP: {rank['total_gp']} · {rank['rank_name']} · GP в ранге: {rank['gp_in_rank']}/100"
+        )
 
     if position and total and current_user:
         me = update.effective_user
@@ -44,8 +45,9 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.extend([
             "",
             f"📍 {name}: место {position} из {total}",
-            f"📍 Твои GP: {get_rank_points(current_user.pts)}",
-            f"🏷️ Твой ранг: {LeaderboardService.get_rank_title(current_user.pts, position)}",
+            f"📍 Общий GP: {current_user.total_gp}",
+            f"🏷️ Ранг: {get_rank_progress(current_user.total_gp)['rank_name']}",
+            f"📈 GP в текущем ранге: {get_rank_progress(current_user.total_gp)['gp_in_rank']}/100",
         ])
 
     caption = f"{banner_caption}\n\n" + "\n".join(lines)

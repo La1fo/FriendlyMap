@@ -15,6 +15,7 @@ from bot.database import get_db_context
 from bot.models.location import Location
 from bot.models.photo import Photo
 from bot.models.user import User
+from bot.services.gp_service import GPService
 from bot.utils.common import is_admin
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
@@ -239,14 +240,16 @@ def _apply_points_change(db, data: dict, amount: int):
         return None, None
 
     if data.get("type") == "rank":
-        user.pts = user.pts + delta
-        new_value = user.pts
+        rank_data = GPService.add_gp(db, user.id, delta)
+        if rank_data is None:
+            return None, None
+        new_value = rank_data["total_gp"]
         label = "ранговых"
     else:
         user.points = max(user.points + delta, 0)
         new_value = user.points
         label = "обычных"
-    db.commit()
+        db.commit()
     return new_value, label
 
 
