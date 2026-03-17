@@ -42,6 +42,7 @@ docker compose up --build
 - `WEB_APP_URL` — URL веб-приложения (по умолчанию `http://localhost:8000`)
 - `ADMIN_IDS` — список ID администраторов через запятую
 - `SEED_SAMPLE_DATA` — добавлять тестовых пользователей для лидерборда (по умолчанию `false`)
+- `WEBAPP_ALLOWED_ORIGINS` — список разрешённых CORS origin через запятую (например `https://app.example.com,https://miniapp.example.com`)
 
 
 ## Telegram Mini App / Web App запуск
@@ -55,3 +56,52 @@ docker compose up --build
 4. Запустите бота: `python -m bot.main`.
 
 > `http://localhost:8000` можно использовать для браузерной проверки, но Telegram WebApp не откроет localhost у конечного пользователя.
+
+## Каноническая схема БД (shared)
+
+Бот и webapp используют общий контракт ORM из `shared/models` и один `DB_URL`.
+
+Базовые доменные таблицы:
+- `users`
+- `locations`
+- `photos`
+- `tags`
+- `location_tags`
+- `achievements`
+- `seasons`
+- `user_achievements`
+- `webapp_picks`
+
+Технические таблицы бота (writer-side):
+- `faq_entries`
+- `support_tickets`
+- `support_messages`
+- `support_sessions`
+- `shop_items`
+
+## Миграции и версия схемы
+
+В проекте используется встроенный migration runner (`shared/migrations.py`) со схемной версией:
+- таблица `schema_version`
+- текущая версия проверяется на старте bot/webapp
+- при `init_db()` применяются миграции и создаются SQL view для read-only сайта
+
+### Как запустить миграции
+
+Миграции запускаются автоматически при старте приложения (`init_db()`).
+При ручной инициализации можно использовать обычный старт:
+
+```bash
+python -m webapp.main
+python -m bot.main
+```
+
+## Read-only слой для отдельного сайта
+
+Для сайта добавлены SQL VIEW (бот в них не пишет):
+- `site_leaderboard`
+- `site_public_users`
+- `site_public_locations`
+- `site_achievements_overview`
+
+Сайт должен использовать read-only DB роль (`SELECT` only) на этих view и нужных публичных таблицах.

@@ -1,11 +1,3 @@
-# bot/models/season.py
-from sqlalchemy import Column, Integer, DateTime, String
-from sqlalchemy.sql import func
-from .base import Base
+from shared.models.season import Season
 
-class Season(Base):
-    __tablename__ = "seasons"
-    id = Column(Integer, primary_key=True)
-    key = Column(String(20), unique=True, nullable=False)
-    start_date = Column(DateTime(timezone=True), server_default=func.now())
-    end_date = Column(DateTime(timezone=True))
+__all__ = ["Season"]

@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from bot.database import init_db
 from webapp.config import settings
+from webapp.database import init_db
 
 from .api import map, tag, webapp
 
@@ -14,7 +14,7 @@ app = FastAPI(title="Friendly Map Web App")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

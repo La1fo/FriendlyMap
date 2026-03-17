@@ -6,11 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from bot.database import get_db_session
-from bot.models.location import Location
-from bot.models.location_tag import LocationTag
-from bot.models.photo import Photo
-from bot.models.tag import Tag
+from webapp.database import get_db_session
+from shared.models.location import Location
+from shared.models.location_tag import LocationTag
+from shared.models.photo import Photo
+from shared.models.tag import Tag
 from webapp.config import settings
 
 router = APIRouter()

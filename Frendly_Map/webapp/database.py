@@ -1,19 +1,12 @@
-# webapp/database.py
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
-from webapp.models.base import Base
-from webapp.models import user, location, photo, tag, location_tag
+
+from shared.db import create_db_engine, create_session_factory, init_schema, verify_schema
 from webapp.config import settings
 
-# Движок
-connect_args = {}
-if settings.DB_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
-engine = create_engine(settings.DB_URL, echo=False, pool_pre_ping=True, connect_args=connect_args)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+engine = create_db_engine(settings.DB_URL)
+SessionLocal = create_session_factory(engine)
 
-@contextmanager
+
 def get_db_session():
     db = SessionLocal()
     try:
@@ -21,5 +14,29 @@ def get_db_session():
     finally:
         db.close()
 
+
+@contextmanager
+def get_db_context():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    # Ensure shared canonical models are loaded
+    from shared.models import (  # noqa: F401
+        Achievement,
+        Location,
+        LocationTag,
+        Photo,
+        Season,
+        Tag,
+        User,
+        UserAchievement,
+        WebAppPick,
+    )
+
+    init_schema(engine)
+    verify_schema(engine)

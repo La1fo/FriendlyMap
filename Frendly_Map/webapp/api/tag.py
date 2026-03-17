@@ -1,8 +1,8 @@
 # webapp/api/tag.py
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from bot.database import get_db_session
-from bot.models.tag import Tag
+from webapp.database import get_db_session
+from shared.models.tag import Tag
 
 router = APIRouter()
 
