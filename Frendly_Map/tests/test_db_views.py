@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from shared.db import create_db_engine, create_session_factory, init_schema
 from shared.models import User
+from shared.migrations import run_migrations
 
 
 def _view_columns(conn, view_name: str) -> list[str]:
@@ -52,3 +53,18 @@ def test_site_views_created_with_contract(tmp_path: Path):
         auth_row = conn.execute(text("SELECT email, hashed_password FROM site_auth_users WHERE user_id=1")).first()
         assert auth_row[0] == "u@example.com"
         assert auth_row[1] == "hashed"
+
+
+def test_run_migrations_recreates_views_even_on_current_schema(tmp_path: Path):
+    db_path = tmp_path / "test_idempotent.db"
+    engine = create_db_engine(f"sqlite:///{db_path}")
+    init_schema(engine)
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP VIEW site_leaderboard"))
+
+    run_migrations(engine)
+
+    with engine.begin() as conn:
+        views = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='view'"))}
+        assert "site_leaderboard" in views

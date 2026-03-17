@@ -143,11 +143,14 @@ def _create_site_views(engine: Engine) -> None:
 
 def run_migrations(engine: Engine) -> None:
     current = get_schema_version(engine)
-    if current >= CURRENT_SCHEMA_VERSION:
-        return
 
+    # Keep migration runner idempotent and self-healing: always re-apply
+    # non-destructive schema/view guarantees required by writer-side services.
     _ensure_total_gp_column(engine)
     _create_site_views(engine)
+
+    if current >= CURRENT_SCHEMA_VERSION:
+        return
 
     with engine.begin() as conn:
         conn.execute(

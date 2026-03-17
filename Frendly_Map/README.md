@@ -151,8 +151,9 @@ python -m bot.main
 
 ## Ranking system contract
 
+- Бот и webapp — writer-side сервисы общей БД.
 - Канонический источник истины для рангов: `users.total_gp`.
-- Бот — единственный writer-сервис для `total_gp`.
+- Изменение `total_gp` (начисление GP) выполняется writer-side логикой бота.
 - Сайт читает ранги из read-only view (`site_public_users`, `site_leaderboard`).
 - Поля `rank_level`, `gp_in_rank`, `rank_name` вычисляются, а не хранятся как канонические колонки.
 - `users.points` — отдельная валюта (монеты) и не участвует в расчёте ранга GP.
