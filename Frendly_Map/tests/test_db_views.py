@@ -41,6 +41,10 @@ def test_site_views_created_with_contract(tmp_path: Path):
 
     with SessionLocal() as db:
         db.add(User(id=1, telegram_id=1, username="u1", total_gp=135, points=10, email="u@example.com", password_hash="hashed"))
+        db.add(User(id=2, telegram_id=2, username="top_master", total_gp=2000, points=0))
+        for idx in range(3, 13):
+            db.add(User(id=idx, telegram_id=idx, username=f"u{idx}", total_gp=1413 - idx, points=0))
+        db.add(User(id=13, telegram_id=13, username="not_top10", total_gp=1300, points=0))
         db.commit()
 
     with engine.begin() as conn:
@@ -48,7 +52,22 @@ def test_site_views_created_with_contract(tmp_path: Path):
         assert row[0] == 135
         assert row[1] == 2
         assert row[2] == 35
-        assert row[3] == "Ранг 2"
+        assert row[3] == "🟢 Исследователь 2"
+
+        top_master_row = conn.execute(
+            text("SELECT rank_level, gp_in_rank, rank_name, position FROM site_leaderboard WHERE user_id=2")
+        ).first()
+        assert top_master_row[0] == 11
+        assert top_master_row[1] == 400
+        assert top_master_row[2] == "⭐ Мастер-картограф"
+        assert top_master_row[3] <= 10
+
+        not_top10_row = conn.execute(
+            text("SELECT rank_level, gp_in_rank, rank_name FROM site_public_users WHERE user_id=13")
+        ).first()
+        assert not_top10_row[0] == 10
+        assert not_top10_row[1] == 400
+        assert not_top10_row[2] == "🟣 Картограф"
 
         auth_row = conn.execute(text("SELECT email, hashed_password FROM site_auth_users WHERE user_id=1")).first()
         assert auth_row[0] == "u@example.com"

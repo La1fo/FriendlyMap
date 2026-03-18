@@ -37,14 +37,17 @@ class LeaderboardService:
         user = db.get(User, user_id)
         if not user:
             return 0, 0
-        higher_count = (
+        higher_or_earlier_count = (
             db.query(func.count(User.id))
-            .filter(User.total_gp > user.total_gp)
+            .filter(
+                (User.total_gp > user.total_gp)
+                | ((User.total_gp == user.total_gp) & (User.id < user.id))
+            )
             .scalar()
         )
         total = db.query(func.count(User.id)).scalar()
-        return higher_count + 1, total
+        return higher_or_earlier_count + 1, total
 
     @staticmethod
     def get_rank_title(points: int, leaderboard_position: int | None = None) -> str:
-        return str(get_rank_progress(points)["rank_name"])
+        return str(get_rank_progress(points, leaderboard_position=leaderboard_position)["rank_name"])

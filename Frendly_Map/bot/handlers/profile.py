@@ -3,12 +3,24 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 
 from bot.database import get_db_context
 from bot.models.user import User
-from shared.rank import get_rank_progress
+from shared.rank import format_rank_gp, get_rank_progress
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
 
 def _profile_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]])
+
+
+def build_profile_caption(user: User, banner: dict[str, str]) -> str:
+    rank = get_rank_progress(user.total_gp)
+    return (
+        f"<b>{banner['title']}</b>\n{banner['description']}\n\n"
+        f"🌐 Ник: @{user.username or 'Не указан'}\n"
+        f"🪙 Монеты: {user.points}\n"
+        f"🏅 {rank['rank_name']}\n"
+        f"📈 {format_rank_gp(rank)}\n"
+        f"📍 Одобрено локаций: {user.approved_locations}"
+    )
 
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -24,16 +36,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     banner = get_section_banner("profile")
-    rank = get_rank_progress(user.total_gp)
-    caption = (
-        f"<b>{banner['title']}</b>\n{banner['description']}\n\n"
-        f"🌐 Ник: @{user.username or 'Не указан'}\n"
-        f"🪙 Монеты: {user.points}\n"
-        f"🏅 {rank['rank_name']}\n"
-        f"📈 GP в текущем ранге: {rank['gp_in_rank']}/100\n"
-        f"📍 Общий GP: {rank['total_gp']}\n"
-        f"📍 Одобрено локаций: {user.approved_locations}"
-    )
+    caption = build_profile_caption(user, banner)
 
     sent = await send_section_banner(
         update,

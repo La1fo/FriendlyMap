@@ -37,4 +37,4 @@ def test_approved_locations_include_author_rank_fields():
     assert author["total_gp"] == 102
     assert author["rank_level"] == 2
     assert author["gp_in_rank"] == 2
-    assert author["rank_name"] == "Ранг 2"
+    assert author["rank_name"] == "🟢 Исследователь 2"

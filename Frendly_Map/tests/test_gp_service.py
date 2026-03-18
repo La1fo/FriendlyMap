@@ -22,3 +22,4 @@ def test_add_gp_rollover_from_99_to_102(tmp_path: Path):
     assert payload["total_gp"] == 102
     assert payload["rank_level"] == 2
     assert payload["gp_in_rank"] == 2
+    assert payload["rank_name"] == "🟢 Исследователь 2"

@@ -4,7 +4,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 SCHEMA_VERSION_TABLE = "schema_version"
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 def _ensure_schema_version_table(engine: Engine) -> None:
@@ -63,16 +63,42 @@ def _create_site_views(engine: Engine) -> None:
             text(
                 """
                 CREATE VIEW site_public_users AS
+                WITH ranked_users AS (
+                    SELECT
+                        u.*,
+                        ROW_NUMBER() OVER (ORDER BY u.total_gp DESC, u.id ASC) AS position
+                    FROM users u
+                )
                 SELECT
                     u.id AS user_id,
                     COALESCE(NULLIF(u.username, ''), u.first_name, 'Пользователь') AS username,
                     u.telegram_id AS telegram_id,
                     u.total_gp AS total_gp,
-                    (CAST(u.total_gp / 100 AS INTEGER) + 1) AS rank_level,
-                    (u.total_gp % 100) AS gp_in_rank,
-                    ('Ранг ' || (CAST(u.total_gp / 100 AS INTEGER) + 1)) AS rank_name,
+                    CASE
+                        WHEN u.total_gp >= 1300 AND u.position <= 10 THEN 11
+                        WHEN u.total_gp >= 900 THEN 10
+                        ELSE (CAST(u.total_gp / 100 AS INTEGER) + 1)
+                    END AS rank_level,
+                    CASE
+                        WHEN u.total_gp >= 1300 AND u.position <= 10 THEN 400
+                        WHEN u.total_gp >= 900 THEN MIN(u.total_gp - 900, 400)
+                        ELSE (u.total_gp % 100)
+                    END AS gp_in_rank,
+                    CASE
+                        WHEN u.total_gp >= 1300 AND u.position <= 10 THEN '⭐ Мастер-картограф'
+                        WHEN u.total_gp >= 900 THEN '🟣 Картограф'
+                        WHEN u.total_gp >= 800 THEN '🟡 Первооткрыватель 3'
+                        WHEN u.total_gp >= 700 THEN '🟡 Первооткрыватель 2'
+                        WHEN u.total_gp >= 600 THEN '🟡 Первооткрыватель 1'
+                        WHEN u.total_gp >= 500 THEN '🔵 Путешественник 3'
+                        WHEN u.total_gp >= 400 THEN '🔵 Путешественник 2'
+                        WHEN u.total_gp >= 300 THEN '🔵 Путешественник 1'
+                        WHEN u.total_gp >= 200 THEN '🟢 Исследователь 3'
+                        WHEN u.total_gp >= 100 THEN '🟢 Исследователь 2'
+                        ELSE '🟢 Исследователь 1'
+                    END AS rank_name,
                     u.approved_locations AS approved_locations
-                FROM users u
+                FROM ranked_users u
                 """
             )
         )
@@ -81,15 +107,41 @@ def _create_site_views(engine: Engine) -> None:
             text(
                 """
                 CREATE VIEW site_leaderboard AS
+                WITH ranked_users AS (
+                    SELECT
+                        u.*,
+                        ROW_NUMBER() OVER (ORDER BY u.total_gp DESC, u.id ASC) AS position
+                    FROM users u
+                )
                 SELECT
                     u.id AS user_id,
                     COALESCE(NULLIF(u.username, ''), u.first_name, 'Пользователь') AS username,
                     u.total_gp AS total_gp,
-                    (CAST(u.total_gp / 100 AS INTEGER) + 1) AS rank_level,
-                    (u.total_gp % 100) AS gp_in_rank,
-                    ('Ранг ' || (CAST(u.total_gp / 100 AS INTEGER) + 1)) AS rank_name,
-                    ROW_NUMBER() OVER (ORDER BY u.total_gp DESC, u.id ASC) AS position
-                FROM users u
+                    CASE
+                        WHEN u.total_gp >= 1300 AND u.position <= 10 THEN 11
+                        WHEN u.total_gp >= 900 THEN 10
+                        ELSE (CAST(u.total_gp / 100 AS INTEGER) + 1)
+                    END AS rank_level,
+                    CASE
+                        WHEN u.total_gp >= 1300 AND u.position <= 10 THEN 400
+                        WHEN u.total_gp >= 900 THEN MIN(u.total_gp - 900, 400)
+                        ELSE (u.total_gp % 100)
+                    END AS gp_in_rank,
+                    CASE
+                        WHEN u.total_gp >= 1300 AND u.position <= 10 THEN '⭐ Мастер-картограф'
+                        WHEN u.total_gp >= 900 THEN '🟣 Картограф'
+                        WHEN u.total_gp >= 800 THEN '🟡 Первооткрыватель 3'
+                        WHEN u.total_gp >= 700 THEN '🟡 Первооткрыватель 2'
+                        WHEN u.total_gp >= 600 THEN '🟡 Первооткрыватель 1'
+                        WHEN u.total_gp >= 500 THEN '🔵 Путешественник 3'
+                        WHEN u.total_gp >= 400 THEN '🔵 Путешественник 2'
+                        WHEN u.total_gp >= 300 THEN '🔵 Путешественник 1'
+                        WHEN u.total_gp >= 200 THEN '🟢 Исследователь 3'
+                        WHEN u.total_gp >= 100 THEN '🟢 Исследователь 2'
+                        ELSE '🟢 Исследователь 1'
+                    END AS rank_name,
+                    u.position AS position
+                FROM ranked_users u
                 """
             )
         )

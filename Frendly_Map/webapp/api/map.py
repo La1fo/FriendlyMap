@@ -4,6 +4,7 @@ from urllib.request import urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from webapp.database import get_db_session
@@ -16,6 +17,20 @@ from shared.rank import get_rank_progress
 from webapp.config import settings
 
 router = APIRouter()
+
+
+def _get_user_position(db: Session, user: User) -> int:
+    higher_or_earlier_count = (
+        db.query(func.count(User.id))
+        .filter(
+            or_(
+                User.total_gp > user.total_gp,
+                (User.total_gp == user.total_gp) & (User.id < user.id),
+            )
+        )
+        .scalar()
+    )
+    return int(higher_or_earlier_count or 0) + 1
 
 
 def _load_location_tags(db: Session, location_id: int) -> list[dict]:
@@ -47,7 +62,8 @@ async def get_approved_locations(db: Session = Depends(get_db_session)):
 
     for loc in locations:
         author = db.get(User, loc.user_id)
-        rank = get_rank_progress(author.total_gp if author else 0)
+        author_position = _get_user_position(db, author) if author else None
+        rank = get_rank_progress(author.total_gp if author else 0, leaderboard_position=author_position)
         result.append(
             {
                 "id": loc.id,

@@ -9,6 +9,11 @@ def test_profile_and_leaderboard_use_total_gp_not_pts():
     assert ".pts" not in leaderboard
     assert "total_gp" in profile
     assert "total_gp" in leaderboard
+    assert "Общий GP" not in profile
+    assert "Общий GP" not in leaderboard
+    assert "GP в текущем ранге" not in profile
+    assert "GP в текущем ранге" not in leaderboard
+    assert "GP в ранге" not in leaderboard
 
 
 def test_services_do_not_write_pts_for_rank_progress():
@@ -26,9 +31,9 @@ def test_rank_outputs_use_shared_rank_helper():
     leaderboard = Path("bot/handlers/leaderboard.py").read_text(encoding="utf-8")
     map_api = Path("webapp/api/map.py").read_text(encoding="utf-8")
 
-    assert "from shared.rank import get_rank_progress" in profile
-    assert "from shared.rank import get_rank_progress" in leaderboard
-    assert "from shared.rank import get_rank_progress" in map_api
+    assert "get_rank_progress" in profile
+    assert "get_rank_progress" in leaderboard
+    assert "get_rank_progress" in map_api
     assert "get_rank_progress(user.total_gp)" in profile
-    assert "get_rank_progress(user.total_gp)" in leaderboard
-    assert "get_rank_progress(author.total_gp if author else 0)" in map_api
+    assert "get_rank_progress(user.total_gp, leaderboard_position=idx)" in leaderboard
+    assert "get_rank_progress(author.total_gp if author else 0, leaderboard_position=author_position)" in map_api

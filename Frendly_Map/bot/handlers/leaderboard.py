@@ -4,8 +4,43 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 from bot.database import get_db_context
 from bot.models.user import User
 from bot.services.leaderboard_service import LeaderboardService
-from shared.rank import get_rank_progress
+from shared.rank import format_rank_gp, get_rank_progress
 from bot.utils.section_banners import get_section_banner, send_section_banner
+
+
+def build_leaderboard_caption(
+    users: list[User],
+    current_user: User | None,
+    position: int,
+    total: int,
+    banner: dict[str, str],
+    current_name: str,
+) -> str:
+    banner_caption = f"<b>{banner['title']}</b>\n{banner['description']}"
+    if not users:
+        return f"{banner_caption}\n\nРейтинг пока пуст 🤷"
+
+    lines = ["🏆 Таблица лидеров (GP):"]
+    for idx, user in enumerate(users, start=1):
+        name = user.username or user.first_name or "Без имени"
+        rank = get_rank_progress(user.total_gp, leaderboard_position=idx)
+        if idx > 1:
+            lines.append("────────────")
+        lines.append(f"{idx}. {name} — {rank['rank_name']} · {format_rank_gp(rank)}")
+
+    if position and total and current_user:
+        my_rank = get_rank_progress(current_user.total_gp, leaderboard_position=position)
+        lines.extend([
+            "",
+            f"📍 {current_name}: место {position} из {total}",
+            f"🏷️ {my_rank['rank_name']}",
+            f"📈 {format_rank_gp(my_rank)}",
+        ])
+
+    caption = f"{banner_caption}\n\n" + "\n".join(lines)
+    if len(caption) > 1024:
+        caption = caption[:1021] + "..."
+    return caption
 
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,42 +52,9 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_back")]])
     banner = get_section_banner("leaderboard")
-    banner_caption = f"<b>{banner['title']}</b>\n{banner['description']}"
-
-    if not users:
-        await send_section_banner(
-            update,
-            context,
-            "leaderboard",
-            f"{banner_caption}\n\nРейтинг пока пуст 🤷",
-            reply_markup=back_kb,
-        )
-        return
-
-    lines = ["🏆 Таблица лидеров (GP):"]
-    for idx, user in enumerate(users, start=1):
-        name = user.username or user.first_name or "Без имени"
-        rank = get_rank_progress(user.total_gp)
-        if idx > 1:
-            lines.append("────────────")
-        lines.append(
-            f"{idx}. {name} — Общий GP: {rank['total_gp']} · {rank['rank_name']} · GP в ранге: {rank['gp_in_rank']}/100"
-        )
-
-    if position and total and current_user:
-        me = update.effective_user
-        name = me.username or me.first_name or "Ты"
-        lines.extend([
-            "",
-            f"📍 {name}: место {position} из {total}",
-            f"📍 Общий GP: {current_user.total_gp}",
-            f"🏷️ Ранг: {get_rank_progress(current_user.total_gp)['rank_name']}",
-            f"📈 GP в текущем ранге: {get_rank_progress(current_user.total_gp)['gp_in_rank']}/100",
-        ])
-
-    caption = f"{banner_caption}\n\n" + "\n".join(lines)
-    if len(caption) > 1024:
-        caption = caption[:1021] + "..."
+    me = update.effective_user
+    name = me.username or me.first_name or "Ты"
+    caption = build_leaderboard_caption(users, current_user, position, total, banner, name)
 
     await send_section_banner(
         update,
