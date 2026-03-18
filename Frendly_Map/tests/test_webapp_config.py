@@ -18,6 +18,26 @@ def test_rejects_wildcard_headers_with_credentials():
         Settings(WEBAPP_ALLOWED_HEADERS="*")
 
 
+def test_rejects_empty_origins():
+    with pytest.raises(ValueError, match="at least one origin"):
+        Settings(WEBAPP_ALLOWED_ORIGINS=" , ")
+
+
+def test_rejects_unsafe_http_origin():
+    with pytest.raises(ValueError, match="Unsafe origin"):
+        Settings(WEBAPP_ALLOWED_ORIGINS="http://example.com")
+
+
+def test_rejects_empty_methods():
+    with pytest.raises(ValueError, match="at least one HTTP method"):
+        Settings(WEBAPP_ALLOWED_METHODS=" , ")
+
+
+def test_rejects_empty_headers():
+    with pytest.raises(ValueError, match="at least one header"):
+        Settings(WEBAPP_ALLOWED_HEADERS=" , ")
+
+
 def test_parses_allowed_lists():
     cfg = Settings(
         WEBAPP_ALLOWED_ORIGINS="https://example.com, http://localhost:8000",

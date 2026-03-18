@@ -177,3 +177,20 @@ python -m bot.main
 
 - `total_gp=99` → `rank_level=1`, `gp_in_rank=99`
 - `total_gp=102` → `rank_level=2`, `gp_in_rank=2`
+
+## Release verification checklist (writer-side)
+
+- [ ] Бот и webapp запущены как writer-side сервисы общей БД (`DB_URL` общий).
+- [ ] Сайт подключён только с read-only правами и читает через `site_*` VIEW.
+- [ ] Ранговый источник истины только `users.total_gp` (runtime не использует `pts`).
+- [ ] `users.points` используется только как отдельная валюта (монеты), не как GP.
+- [ ] Все 5 `site_*` VIEW существуют и совпадают с контрактом колонок из этого README.
+- [ ] Формула ранга единая: `rank_level=floor(total_gp/100)+1`, `gp_in_rank=total_gp%100`, `rank_name="Ранг {rank_level}"`.
+- [ ] Профиль/лидерборд/API показывают:
+  - `Ранг N`
+  - `GP в текущем ранге: X/100`
+  - `Общий GP: Y`
+  - монеты отдельно (если включены в UI).
+- [ ] Telegram Mini App `init_data` валидация включена и отклоняет невалидную подпись.
+- [ ] CORS конфиг задан явно (`WEBAPP_ALLOWED_ORIGINS/METHODS/HEADERS`) и не использует `*` при credentials.
+- [ ] Прогнан набор тестов release-уровня (`pytest`) без падений.
