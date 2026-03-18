@@ -87,3 +87,10 @@ def test_run_migrations_recreates_views_even_on_current_schema(tmp_path: Path):
     with engine.begin() as conn:
         views = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='view'"))}
         assert "site_leaderboard" in views
+
+
+def test_rank_view_sql_uses_postgres_compatible_least():
+    source = Path("shared/migrations.py").read_text(encoding="utf-8")
+
+    assert "MIN(u.total_gp - 900, 400)" not in source
+    assert "LEAST(GREATEST(u.total_gp - 900, 0), 400)" in source

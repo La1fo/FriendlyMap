@@ -4,7 +4,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 SCHEMA_VERSION_TABLE = "schema_version"
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 def _ensure_schema_version_table(engine: Engine) -> None:
@@ -52,6 +52,11 @@ def _ensure_total_gp_column(engine: Engine) -> None:
 
 
 def _create_site_views(engine: Engine) -> None:
+    if engine.dialect.name == "sqlite":
+        cartographer_progress_expr = "MIN(MAX(u.total_gp - 900, 0), 400)"
+    else:
+        cartographer_progress_expr = "LEAST(GREATEST(u.total_gp - 900, 0), 400)"
+
     with engine.begin() as conn:
         conn.execute(text("DROP VIEW IF EXISTS site_public_locations"))
         conn.execute(text("DROP VIEW IF EXISTS site_public_users"))
@@ -61,7 +66,7 @@ def _create_site_views(engine: Engine) -> None:
 
         conn.execute(
             text(
-                """
+                f"""
                 CREATE VIEW site_public_users AS
                 WITH ranked_users AS (
                     SELECT
@@ -81,7 +86,7 @@ def _create_site_views(engine: Engine) -> None:
                     END AS rank_level,
                     CASE
                         WHEN u.total_gp >= 1300 AND u.position <= 10 THEN 400
-                        WHEN u.total_gp >= 900 THEN MIN(u.total_gp - 900, 400)
+                        WHEN u.total_gp >= 900 THEN {cartographer_progress_expr}
                         ELSE (u.total_gp % 100)
                     END AS gp_in_rank,
                     CASE
@@ -105,7 +110,7 @@ def _create_site_views(engine: Engine) -> None:
 
         conn.execute(
             text(
-                """
+                f"""
                 CREATE VIEW site_leaderboard AS
                 WITH ranked_users AS (
                     SELECT
@@ -124,7 +129,7 @@ def _create_site_views(engine: Engine) -> None:
                     END AS rank_level,
                     CASE
                         WHEN u.total_gp >= 1300 AND u.position <= 10 THEN 400
-                        WHEN u.total_gp >= 900 THEN MIN(u.total_gp - 900, 400)
+                        WHEN u.total_gp >= 900 THEN {cartographer_progress_expr}
                         ELSE (u.total_gp % 100)
                     END AS gp_in_rank,
                     CASE
