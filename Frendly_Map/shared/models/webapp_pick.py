@@ -15,5 +15,6 @@ class WebAppPick(Base):
     flow: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    tag_ids_json: Mapped[str | None] = mapped_column(String, nullable=True)
     processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

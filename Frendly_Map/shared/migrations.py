@@ -4,7 +4,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 SCHEMA_VERSION_TABLE = "schema_version"
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 def _ensure_schema_version_table(engine: Engine) -> None:
@@ -49,6 +49,18 @@ def _ensure_total_gp_column(engine: Engine) -> None:
                     "UPDATE users SET total_gp = CASE WHEN total_gp = 0 THEN COALESCE(points, 0) ELSE total_gp END"
                 )
             )
+
+
+def _ensure_webapp_pick_tags_column(engine: Engine) -> None:
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        tables = set(inspector.get_table_names())
+        if "webapp_picks" not in tables:
+            return
+
+        columns = {c["name"] for c in inspector.get_columns("webapp_picks")}
+        if "tag_ids_json" not in columns:
+            conn.execute(text("ALTER TABLE webapp_picks ADD COLUMN tag_ids_json VARCHAR"))
 
 
 def _create_site_views(engine: Engine) -> None:
@@ -204,6 +216,7 @@ def run_migrations(engine: Engine) -> None:
     # Keep migration runner idempotent and self-healing: always re-apply
     # non-destructive schema/view guarantees required by writer-side services.
     _ensure_total_gp_column(engine)
+    _ensure_webapp_pick_tags_column(engine)
     _create_site_views(engine)
 
     if current >= CURRENT_SCHEMA_VERSION:

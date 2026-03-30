@@ -23,7 +23,7 @@ def test_profile_caption_uses_rank_and_gp_only():
 
 def test_leaderboard_caption_uses_rank_and_gp_only():
     users = [
-        SimpleNamespace(id=1, username="alpha", first_name="Alpha", total_gp=1300),
+        SimpleNamespace(id=1, username="alpha", first_name="Alpha", total_gp=1400),
         SimpleNamespace(id=2, username="beta", first_name="Beta", total_gp=950),
     ]
     current_user = users[1]
@@ -38,8 +38,8 @@ def test_leaderboard_caption_uses_rank_and_gp_only():
         current_name="beta",
     )
 
-    assert "⭐ Мастер-картограф · GP: 400/400" in caption
-    assert "🟣 Картограф · GP: 50/400" in caption
+    assert "⭐ Мастер-картограф · GP: 500" in caption
+    assert "🟣 Картограф · GP: 50" in caption
     assert "Общий GP" not in caption
     assert "GP в ранге" not in caption
     assert "GP в текущем ранге" not in caption

@@ -59,6 +59,16 @@ docker compose up --build
 
 > `http://localhost:8000` можно использовать для браузерной проверки, но Telegram WebApp не откроет localhost у конечного пользователя.
 
+### Add-location flow (bot + writer webapp)
+
+Для сценария добавления локации процесс теперь единый:
+
+1. Бот открывает Mini App в режиме picker (`/map?picker=1`).
+2. В Mini App пользователь выбирает точку (шаг 1).
+3. В Mini App пользователь выбирает теги и подтверждает (шаг 2).
+4. Mini App отправляет в writer webapp confirm payload с координатами и `tag_ids`.
+5. Бот подхватывает результат и продолжает flow со следующим шагом (загрузка фото), не спрашивая теги отдельно в Telegram UI.
+
 ## Каноническая схема БД (shared)
 
 Бот и webapp используют общий контракт ORM из `shared/models` и один `DB_URL`.

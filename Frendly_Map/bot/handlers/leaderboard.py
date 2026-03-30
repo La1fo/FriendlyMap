@@ -4,8 +4,12 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, Mes
 from bot.database import get_db_context
 from bot.models.user import User
 from bot.services.leaderboard_service import LeaderboardService
-from shared.rank import format_rank_gp, get_rank_progress
+from shared.rank import get_rank_progress
 from bot.utils.section_banners import get_section_banner, send_section_banner
+
+
+def _format_leaderboard_gp(rank_payload: dict[str, int | str]) -> str:
+    return f"GP: {int(rank_payload['gp_in_rank'])}"
 
 
 def build_leaderboard_caption(
@@ -26,7 +30,7 @@ def build_leaderboard_caption(
         rank = get_rank_progress(user.total_gp, leaderboard_position=idx)
         if idx > 1:
             lines.append("────────────")
-        lines.append(f"{idx}. {name} — {rank['rank_name']} · {format_rank_gp(rank)}")
+        lines.append(f"{idx}. {name} — {rank['rank_name']} · {_format_leaderboard_gp(rank)}")
 
     if position and total and current_user:
         my_rank = get_rank_progress(current_user.total_gp, leaderboard_position=position)
@@ -34,7 +38,7 @@ def build_leaderboard_caption(
             "",
             f"📍 {current_name}: место {position} из {total}",
             f"🏷️ {my_rank['rank_name']}",
-            f"📈 {format_rank_gp(my_rank)}",
+            f"📈 {_format_leaderboard_gp(my_rank)}",
         ])
 
     caption = f"{banner_caption}\n\n" + "\n".join(lines)

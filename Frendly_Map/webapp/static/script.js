@@ -32,6 +32,9 @@ const markersById = new Map();
 let allLocations = [];
 let filteredLocations = [];
 let selectedTags = new Set();
+let selectedPickerTagIds = new Set();
+let pickerStep = 1;
+let loadedPickerTags = false;
 let searchTerm = "";
 
 const TAG_CATEGORY_ORDER = ["Еда", "Отдых", "Город", "Культура", "Развлечения", "Атмосфера", "Активности", "Доступность"];
@@ -113,6 +116,8 @@ function initDom() {
   els.closeDetailBtn = document.getElementById("closeDetailBtn");
   els.statusBar = document.getElementById("statusBar");
   els.confirmPointBtn = document.getElementById("confirmPointBtn");
+  els.pickerStepHint = document.getElementById("pickerStepHint");
+  els.pickerTagHelp = document.getElementById("pickerTagHelp");
 
   if (window.MAP_PICKER_MODE) {
     els.searchInput.classList.add("hidden");
@@ -121,6 +126,8 @@ function initDom() {
     els.refreshBtn.classList.add("hidden");
     els.tagFiltersPanel.classList.add("hidden");
     els.selectedTags.classList.add("hidden");
+    els.pickerStepHint.classList.remove("hidden");
+    els.pickerTagHelp.classList.remove("hidden");
     document.querySelector(".side-panel")?.classList.add("hidden");
     els.resultsToggleBtn?.classList.add("hidden");
   } else if (isMobileViewport()) {
@@ -175,6 +182,17 @@ async function confirmPickerPoint() {
     return;
   }
 
+  if (pickerStep === 1) {
+    pickerStep = 2;
+    els.confirmPointBtn.textContent = "✅ Подтвердить теги";
+    els.tagFiltersPanel.classList.remove("hidden");
+    showStatus("Шаг 2 из 2: выберите до 5 тегов и нажмите подтверждение", true);
+    if (!loadedPickerTags) {
+      await loadPickerTags();
+    }
+    return;
+  }
+
   try {
     const response = await fetch("/api/webapp/picker/confirm", {
       method: "POST",
@@ -184,6 +202,7 @@ async function confirmPickerPoint() {
         longitude: pickerCoords.lng,
         init_data: tg.initData,
         chat_id: getPickerChatId(),
+        tag_ids: [...selectedPickerTagIds],
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -191,11 +210,11 @@ async function confirmPickerPoint() {
       throw new Error(payload?.detail || `HTTP ${response.status}`);
     }
 
-    showStatus("Точка сохранена. Возвращайтесь в бот", true);
+    showStatus("Точка и теги сохранены. Возвращайтесь в бот", true);
     setTimeout(() => tg.close(), 300);
   } catch (err) {
     console.error(err);
-    showStatus("Не удалось передать точку. Попробуйте снова", true);
+    showStatus("Не удалось передать точку и теги. Попробуйте снова", true);
   }
 }
 
@@ -217,8 +236,21 @@ async function loadTags() {
   }
 }
 
+async function loadPickerTags() {
+  try {
+    const tags = await apiJson("/api/tag/tags");
+    loadedPickerTags = true;
+    renderTags(tags || []);
+  } catch {
+    showStatus("Не удалось загрузить теги", true);
+  }
+}
+
 
 function renderSelectedTags() {
+  if (window.MAP_PICKER_MODE) {
+    return;
+  }
   els.selectedTags.innerHTML = "";
   if (selectedTags.size === 0) {
     els.selectedTags.classList.add("hidden");
@@ -264,7 +296,23 @@ function renderTags(tags) {
       chip.className = "tag-chip";
       chip.textContent = tag.name;
       chip.dataset.tag = tag.name.toLowerCase();
+      chip.dataset.tagId = String(tag.id);
       chip.addEventListener("click", () => {
+        if (window.MAP_PICKER_MODE) {
+          const tagId = Number(chip.dataset.tagId);
+          if (selectedPickerTagIds.has(tagId)) {
+            selectedPickerTagIds.delete(tagId);
+          } else {
+            if (selectedPickerTagIds.size >= 5) {
+              showStatus("Можно выбрать не более 5 тегов", true);
+              return;
+            }
+            selectedPickerTagIds.add(tagId);
+          }
+          chip.classList.toggle("active", selectedPickerTagIds.has(tagId));
+          return;
+        }
+
         const key = chip.dataset.tag;
         if (selectedTags.has(key)) selectedTags.delete(key);
         else selectedTags.add(key);
@@ -473,10 +521,12 @@ async function loadLocations() {
 }
 
 function bindEvents() {
-  els.searchInput.addEventListener("input", (e) => {
-    searchTerm = e.target.value.trim().toLowerCase();
-    applyFilters();
-  });
+  if (!window.MAP_PICKER_MODE) {
+    els.searchInput.addEventListener("input", (e) => {
+      searchTerm = e.target.value.trim().toLowerCase();
+      applyFilters();
+    });
+  }
   els.clearFiltersBtn.addEventListener("click", () => {
     selectedTags.clear();
     searchTerm = "";

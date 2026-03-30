@@ -44,10 +44,11 @@ def get_rank_progress(
     top10 = is_top10_player(leaderboard_position=leaderboard_position, is_top10=is_top10)
 
     if total_gp >= MASTER_CARTOGRAPHER_GP and top10:
+        gp_in_rank = max(total_gp - CARTOGRAPHER_BASE_GP, MASTER_CARTOGRAPHER_EXTRA_GP)
         return {
             "total_gp": total_gp,
             "rank_level": MASTER_CARTOGRAPHER_LEVEL,
-            "gp_in_rank": MASTER_CARTOGRAPHER_EXTRA_GP,
+            "gp_in_rank": gp_in_rank,
             "gp_to_next_rank": 0,
             "rank_name": MASTER_CARTOGRAPHER_NAME,
         }
@@ -80,7 +81,7 @@ def format_rank_gp(rank_progress: dict[str, Any]) -> str:
     rank_name = str(rank_progress["rank_name"])
     gp_in_rank = int(rank_progress["gp_in_rank"])
     if rank_name == MASTER_CARTOGRAPHER_NAME:
-        return "GP: 400/400"
+        return f"GP: {gp_in_rank}/400"
     if rank_name == CARTOGRAPHER_NAME:
         return f"GP: {gp_in_rank}/400"
     return f"GP: {gp_in_rank}/100"

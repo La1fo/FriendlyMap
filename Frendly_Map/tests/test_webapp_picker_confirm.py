@@ -37,6 +37,7 @@ def test_picker_confirm_endpoint(monkeypatch):
             "longitude": 37.61,
             "init_data": init_data,
             "chat_id": 5001,
+            "tag_ids": [1, 2, 2, 3],
         },
     )
     assert resp.status_code == 200
@@ -51,3 +52,4 @@ def test_picker_confirm_endpoint(monkeypatch):
         )
         assert item is not None
         assert float(item.latitude) == 55.75
+        assert json.loads(item.tag_ids_json or "[]") == [1, 2, 3]

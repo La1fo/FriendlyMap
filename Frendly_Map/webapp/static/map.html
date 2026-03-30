@@ -13,10 +13,11 @@
         <div>
             <h1>Friendly Map</h1>
             <p>Friendly Map Bot</p>
+            <p id="pickerStepHint" class="hidden">Шаг 1 из 2: выберите точку на карте</p>
         </div>
         <div class="toolbar-actions">
             <button id="findMeBtn" class="btn">📍 Я здесь</button>
-            <button id="confirmPointBtn" class="btn hidden">✅ Подтвердить точку</button>
+            <button id="confirmPointBtn" class="btn hidden">✅ Далее: выбрать теги</button>
         </div>
     </header>
 
@@ -30,6 +31,7 @@
         <div id="selectedTags" class="tag-filters hidden"></div>
         <div id="tagFiltersPanel" class="tags-panel hidden">
             <p class="tags-panel-title">Выберите теги:</p>
+            <p id="pickerTagHelp" class="tags-panel-title hidden">Шаг 2 из 2: выберите до 5 тегов и подтвердите</p>
             <div id="tagFilters" class="tag-filters"></div>
         </div>
     </section>
