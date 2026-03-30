@@ -16,6 +16,7 @@ from telegram.ext import (
 
 from bot.database import get_db_context
 from bot.keyboards.main_menu import get_main_menu
+from bot.models.tag import Tag
 from bot.models.webapp_pick import WebAppPick
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.location_service import LocationService

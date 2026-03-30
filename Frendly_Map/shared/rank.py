@@ -78,10 +78,5 @@ def get_rank_progress(
 
 
 def format_rank_gp(rank_progress: dict[str, Any]) -> str:
-    rank_name = str(rank_progress["rank_name"])
     gp_in_rank = int(rank_progress["gp_in_rank"])
-    if rank_name == MASTER_CARTOGRAPHER_NAME:
-        return f"GP: {gp_in_rank}/400"
-    if rank_name == CARTOGRAPHER_NAME:
-        return f"GP: {gp_in_rank}/400"
-    return f"GP: {gp_in_rank}/100"
+    return f"GP: {gp_in_rank}"

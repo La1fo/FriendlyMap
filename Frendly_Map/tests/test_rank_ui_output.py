@@ -16,7 +16,7 @@ def test_profile_caption_uses_rank_and_gp_only():
     caption = build_profile_caption(user, banner)
 
     assert "🟣 Картограф" in caption
-    assert "GP: 50/400" in caption
+    assert "GP: 50" in caption
     assert "Общий GP" not in caption
     assert "GP в текущем ранге" not in caption
 

@@ -35,7 +35,7 @@ def test_rank_progress_boundaries():
 
 
 def test_format_rank_gp():
-    assert format_rank_gp(get_rank_progress(55)) == "GP: 55/100"
-    assert format_rank_gp(get_rank_progress(950)) == "GP: 50/400"
-    assert format_rank_gp(get_rank_progress(1300, leaderboard_position=1)) == "GP: 400/400"
-    assert format_rank_gp(get_rank_progress(1450, leaderboard_position=1)) == "GP: 550/400"
+    assert format_rank_gp(get_rank_progress(55)) == "GP: 55"
+    assert format_rank_gp(get_rank_progress(950)) == "GP: 50"
+    assert format_rank_gp(get_rank_progress(1300, leaderboard_position=1)) == "GP: 400"
+    assert format_rank_gp(get_rank_progress(1450, leaderboard_position=1)) == "GP: 550"
