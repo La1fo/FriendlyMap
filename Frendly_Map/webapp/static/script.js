@@ -45,6 +45,10 @@ function isModerationMode() {
   return window.MAP_MODERATION_MODE || window.MAP_DELETE_MODE;
 }
 
+function isDeleteModeEnabled() {
+  return window.MAP_DELETE_MODE && !!window.Telegram?.WebApp?.initData;
+}
+
 function isMobileViewport() {
   return window.matchMedia("(max-width: 860px)").matches;
 }
@@ -545,16 +549,12 @@ async function loadLocations() {
 }
 
 async function deleteSelectedLocation() {
-  if (!window.MAP_DELETE_MODE) return;
+  if (!isDeleteModeEnabled()) return;
   if (!selectedLocation) {
     showStatus("Сначала выберите локацию", true);
     return;
   }
   const tg = window.Telegram?.WebApp;
-  if (!tg?.initData) {
-    showStatus("Удаление доступно только из Telegram", true);
-    return;
-  }
   const ok = window.confirm(`Удалить локацию «${selectedLocation.name}»?`);
   if (!ok) return;
 
@@ -610,7 +610,10 @@ function bindEvents() {
   els.findMeBtn.addEventListener("click", findMe);
   els.buildRouteBtn.addEventListener("click", buildRoute);
   els.clearRouteBtn.addEventListener("click", clearRoute);
-  if (window.MAP_DELETE_MODE) {
+  if (window.MAP_DELETE_MODE && !isDeleteModeEnabled()) {
+    showStatus("Режим удаления доступен только модератору из Telegram", true);
+  }
+  if (isDeleteModeEnabled()) {
     els.buildRouteBtn.textContent = "🗑 Удалить локацию";
     els.clearRouteBtn.classList.add("hidden");
     els.buildRouteBtn.replaceWith(els.buildRouteBtn.cloneNode(true));

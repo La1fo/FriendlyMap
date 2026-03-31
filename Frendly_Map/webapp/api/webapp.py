@@ -89,7 +89,9 @@ def confirm_picker_point(payload: PickerConfirmRequest):
 
 @router.post("/moderation/delete-location")
 def moderation_delete_location(payload: DeleteLocationRequest):
+    logger.info("Delete via map requested", extra={"location_id": payload.location_id, "confirm": payload.confirm})
     if not payload.confirm:
+        logger.warning("Delete via map rejected: confirmation flag missing", extra={"location_id": payload.location_id})
         raise HTTPException(status_code=400, detail="Требуется подтверждение удаления")
     try:
         user_payload = validate_telegram_init_data(payload.init_data, settings.BOT_TOKEN)
@@ -100,11 +102,13 @@ def moderation_delete_location(payload: DeleteLocationRequest):
 
     moderator_id = int(user_payload["id"])
     if not is_admin_id(moderator_id):
+        logger.warning("Delete via map rejected: unauthorized user", extra={"user_id": moderator_id, "location_id": payload.location_id})
         raise HTTPException(status_code=403, detail="Только для модераторов")
 
     with get_db_context() as db:
         loc = db.get(Location, payload.location_id)
         if not loc or loc.status == "deleted":
+            logger.warning("Delete via map failed: location not found", extra={"moderator_id": moderator_id, "location_id": payload.location_id})
             raise HTTPException(status_code=404, detail="Локация не найдена")
         loc.status = "deleted"
         loc.approved_by = moderator_id

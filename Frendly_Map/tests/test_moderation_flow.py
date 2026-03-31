@@ -2,7 +2,7 @@ import asyncio
 from contextlib import contextmanager
 from types import SimpleNamespace
 
-from bot.handlers import moderation
+from bot.handlers import moderation, moderation_menu
 from shared.db import create_db_engine, create_session_factory, init_schema
 from shared.models.location import Location
 from shared.models.photo import Photo
@@ -163,3 +163,36 @@ def test_extra_gp_capped_and_extra_coins_unlimited(monkeypatch, tmp_path):
     with SessionLocal() as db:
         user = db.get(User, 5)
         assert user.points == 500
+
+
+def test_delete_menu_contains_map_delete_mode_button(monkeypatch, tmp_path):
+    SessionLocal = _setup_db(tmp_path)
+    with SessionLocal() as db:
+        db.add(User(id=42, telegram_id=42, username="mod", points=0, total_gp=0))
+        db.add(Location(id=77, user_id=42, name="Delete me", latitude=1.0, longitude=2.0, status="approved"))
+        db.commit()
+
+    @contextmanager
+    def fake_db_context():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    edited = {}
+
+    async def fake_edit_message_text(text, chat_id, message_id, reply_markup):
+        edited["text"] = text
+        edited["markup"] = reply_markup
+
+    monkeypatch.setattr(moderation_menu, "get_db_context", fake_db_context)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42), callback_query=SimpleNamespace(message=SimpleNamespace()), message=None)
+    context = SimpleNamespace(user_data={"moderation_menu_message_id": 999}, bot=SimpleNamespace(edit_message_text=fake_edit_message_text))
+
+    asyncio.run(moderation_menu.render_delete_locations(update, context))
+
+    first_row_button = edited["markup"].inline_keyboard[0][0]
+    assert first_row_button.text == "🗺 Удалить через карту"
+    assert "mod_delete=1" in first_row_button.web_app["url"]

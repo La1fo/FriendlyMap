@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.error import BadRequest
@@ -22,6 +23,7 @@ from bot.utils.webapp import build_webapp_url
 
 POINTS_ACTION, POINTS_TYPE, POINTS_SELECT_USER, POINTS_AMOUNT, POINTS_CUSTOM = range(5)
 DEL_SELECT = 5
+logger = logging.getLogger(__name__)
 
 def _ensure_admin(update: Update) -> bool:
     return is_admin(update.effective_user.id)
@@ -326,6 +328,7 @@ async def delete_location_start(update: Update, context: ContextTypes.DEFAULT_TY
 
     context.user_data["moderation_menu_message_id"] = query.message.message_id
     context.user_data.pop("delete_locations_active", None)
+    logger.info("Delete mode opened", extra={"moderator_id": update.effective_user.id})
     await render_delete_locations(update, context)
     return DEL_SELECT
 
@@ -353,7 +356,7 @@ async def render_delete_locations(update: Update, context: ContextTypes.DEFAULT_
 
     keyboard = [[InlineKeyboardButton("🗺 Удалить через карту", web_app={"url": build_webapp_url("/map?mod_delete=1&moderation=1")})]]
     keyboard.extend(
-        [[InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"del_loc_{loc.id}")]]
+        [InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"del_loc_{loc.id}")]
         for loc in locations
     )
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="moderation")])
@@ -383,6 +386,7 @@ async def delete_location_select(update: Update, context: ContextTypes.DEFAULT_T
     await query.answer()
     loc_id = int(query.data.split("_")[-1])
     context.user_data["delete_loc_id"] = loc_id
+    logger.info("Delete target location selected", extra={"moderator_id": update.effective_user.id, "location_id": loc_id})
     await query.edit_message_text(
         "Действия с локацией:",
         reply_markup=InlineKeyboardMarkup([
