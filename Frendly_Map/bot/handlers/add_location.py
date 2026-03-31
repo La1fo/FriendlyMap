@@ -27,7 +27,6 @@ from bot.utils.webapp import build_webapp_url
 ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_PHOTO, CONFIRM = range(5)
 
 CB_CANCEL = "addloc_cancel"
-CB_SKIP_DESC = "addloc_skip_desc"
 CB_CONFIRM = "addloc_confirm"
 CB_PHOTO_DONE = "addloc_photo_done"
 WEBAPP_FLOW_ADD_LOCATION = "add_location"
@@ -246,12 +245,7 @@ def _cancel_keyboard() -> InlineKeyboardMarkup:
 
 
 def _description_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("⏭ Пропустить описание", callback_data=CB_SKIP_DESC)],
-            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
-        ]
-    )
+    return InlineKeyboardMarkup([[InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)]])
 
 
 def _location_keyboard(chat_id: int) -> InlineKeyboardMarkup:
@@ -385,23 +379,19 @@ async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["loc_description"] = update.message.text.strip()
+    description = (update.message.text or "").strip()
+    if not description:
+        await _delete_user_message(update, context)
+        await _render_flow_message(
+            update,
+            context,
+            "⚠️ Описание обязательно. Напиши краткое описание локации.",
+            _description_keyboard(),
+        )
+        return ASK_DESCRIPTION
+
+    context.user_data["loc_description"] = description
     await _delete_user_message(update, context)
-    await _render_location_prompt(
-        update,
-        context,
-        "📌 Выбери точку на карте и подтверди её в Mini App. Затем выбери теги и подтверди.",
-    )
-    with get_db_context() as db:
-        LocationService.ensure_tags(db, TAG_CATALOG)
-    _clear_pending_geo_pick(update.effective_user.id, update.effective_chat.id)
-    await _schedule_geo_pick_poll(context, update.effective_user.id, update.effective_chat.id)
-    return ASK_LOCATION
-
-
-async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    context.user_data["loc_description"] = None
     await _render_location_prompt(
         update,
         context,
@@ -502,6 +492,15 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await update.callback_query.answer()
 
+    if not context.user_data.get("photos"):
+        await _render_flow_message(
+            update,
+            context,
+            "⚠️ Нельзя продолжить без фото. Отправь хотя бы одно фото места.",
+            _photo_keyboard(),
+        )
+        return ASK_PHOTO
+
     d = context.user_data
     selected_ids = _get_selected_tag_ids(context)
     tag_line = "—"
@@ -588,7 +587,6 @@ add_location_handler = ConversationHandler(
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_description)],
         ASK_DESCRIPTION: [
-            CallbackQueryHandler(skip_description, pattern=f"^{CB_SKIP_DESC}$"),
             MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
         ],
         ASK_LOCATION: [

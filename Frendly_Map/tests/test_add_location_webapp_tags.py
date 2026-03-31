@@ -15,6 +15,8 @@ def test_add_location_no_longer_has_bot_tag_selection_states():
     assert "ASK_TAG_PICK" not in source
     assert "CB_TAG_TOGGLE" not in source
     assert "CB_TAG_CAT" not in source
+    assert "skip_description" not in source
+    assert "Пропустить описание" not in source
 
 
 def test_add_location_uses_webapp_tags_payload():
@@ -190,3 +192,57 @@ def test_selected_tag_ids_reach_save_flow(monkeypatch):
 
     assert result == add_location.ConversationHandler.END
     assert calls["tag_ids"] == [8, 9]
+
+
+def test_confirm_without_photo_does_not_advance(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_render_flow_message(update, context, text_value, reply_markup):
+        captured["text"] = text_value
+
+    async def fake_answer():
+        return None
+
+    update = SimpleNamespace(callback_query=SimpleNamespace(answer=fake_answer), message=None)
+    context = SimpleNamespace(
+        user_data={
+            "loc_name": "Point",
+            "loc_description": "Desc",
+            "latitude": 1.0,
+            "longitude": 2.0,
+            "photos": [],
+            "selected_tag_ids": [],
+        }
+    )
+
+    async def _run():
+        monkeypatch.setattr(add_location, "_render_flow_message", fake_render_flow_message)
+        return await add_location.confirm(update, context)
+
+    next_state = asyncio.run(_run())
+
+    assert next_state == add_location.ASK_PHOTO
+    assert "Нельзя продолжить без фото" in captured["text"]
+
+
+def test_empty_description_is_rejected(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_render_flow_message(update, context, text_value, reply_markup):
+        captured["text"] = text_value
+
+    async def fake_delete_user_message(update, context):
+        return None
+
+    update = SimpleNamespace(message=SimpleNamespace(text="   "))
+    context = SimpleNamespace(user_data={})
+
+    async def _run():
+        monkeypatch.setattr(add_location, "_render_flow_message", fake_render_flow_message)
+        monkeypatch.setattr(add_location, "_delete_user_message", fake_delete_user_message)
+        return await add_location.ask_coords(update, context)
+
+    next_state = asyncio.run(_run())
+
+    assert next_state == add_location.ASK_DESCRIPTION
+    assert "Описание обязательно" in captured["text"]

@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 
-from bot.handlers.leaderboard import build_leaderboard_caption
+from bot.handlers.leaderboard import LEADERBOARD_SEPARATOR, build_leaderboard_caption
 from bot.handlers.profile import build_profile_caption
+from shared.rank import get_rank_progress
 
 
 def test_profile_caption_uses_rank_and_gp_only():
@@ -43,3 +44,34 @@ def test_leaderboard_caption_uses_rank_and_gp_only():
     assert "Общий GP" not in caption
     assert "GP в ранге" not in caption
     assert "GP в текущем ранге" not in caption
+    assert LEADERBOARD_SEPARATOR in caption
+    assert len(LEADERBOARD_SEPARATOR) >= 20
+
+
+def test_profile_and_leaderboard_use_same_rank_source_for_master():
+    user = SimpleNamespace(
+        id=1,
+        username="master",
+        first_name="Master",
+        total_gp=1450,
+        points=0,
+        approved_locations=12,
+    )
+    banner_profile = {"title": "Профиль", "description": "Описание"}
+    banner_leader = {"title": "Лидеры", "description": "Описание"}
+
+    profile_caption = build_profile_caption(user, banner_profile, leaderboard_position=1)
+    leaderboard_caption = build_leaderboard_caption(
+        users=[user],
+        current_user=user,
+        position=1,
+        total=10,
+        banner=banner_leader,
+        current_name="master",
+    )
+    rank = get_rank_progress(1450, leaderboard_position=1)
+
+    assert rank["rank_name"] in profile_caption
+    assert rank["rank_name"] in leaderboard_caption
+    assert f"GP: {rank['gp_in_rank']}" in profile_caption
+    assert f"GP: {rank['gp_in_rank']}" in leaderboard_caption

@@ -7,6 +7,8 @@ from bot.services.leaderboard_service import LeaderboardService
 from shared.rank import get_rank_progress
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
+LEADERBOARD_SEPARATOR = "──────────────────────────────"
+
 
 def _format_leaderboard_gp(rank_payload: dict[str, int | str]) -> str:
     return f"GP: {int(rank_payload['gp_in_rank'])}"
@@ -29,7 +31,7 @@ def build_leaderboard_caption(
         name = user.username or user.first_name or "Без имени"
         rank = get_rank_progress(user.total_gp, leaderboard_position=idx)
         if idx > 1:
-            lines.append("────────────")
+            lines.append(LEADERBOARD_SEPARATOR)
         lines.append(f"{idx}. {name} — {rank['rank_name']} · {_format_leaderboard_gp(rank)}")
 
     if position and total and current_user:

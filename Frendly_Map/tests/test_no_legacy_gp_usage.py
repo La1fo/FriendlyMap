@@ -34,6 +34,6 @@ def test_rank_outputs_use_shared_rank_helper():
     assert "get_rank_progress" in profile
     assert "get_rank_progress" in leaderboard
     assert "get_rank_progress" in map_api
-    assert "get_rank_progress(user.total_gp)" in profile
+    assert "get_rank_progress(user.total_gp, leaderboard_position=leaderboard_position)" in profile
     assert "get_rank_progress(user.total_gp, leaderboard_position=idx)" in leaderboard
     assert "get_rank_progress(author.total_gp if author else 0, leaderboard_position=author_position)" in map_api
