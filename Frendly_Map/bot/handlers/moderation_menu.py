@@ -18,6 +18,7 @@ from bot.models.user import User
 from bot.services.gp_service import GPService
 from bot.utils.common import is_admin
 from bot.utils.section_banners import get_section_banner, send_section_banner
+from bot.utils.webapp import build_webapp_url
 
 POINTS_ACTION, POINTS_TYPE, POINTS_SELECT_USER, POINTS_AMOUNT, POINTS_CUSTOM = range(5)
 DEL_SELECT = 5
@@ -350,10 +351,11 @@ async def render_delete_locations(update: Update, context: ContextTypes.DEFAULT_
             )
         return
 
-    keyboard = [
-        [InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"del_loc_{loc.id}")]
+    keyboard = [[InlineKeyboardButton("🗺 Удалить через карту", web_app={"url": build_webapp_url("/map?mod_delete=1&moderation=1")})]]
+    keyboard.extend(
+        [[InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"del_loc_{loc.id}")]]
         for loc in locations
-    ]
+    )
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="moderation")])
     menu_message_id = context.user_data.get("moderation_menu_message_id")
     text_value = "Выберите локацию:"

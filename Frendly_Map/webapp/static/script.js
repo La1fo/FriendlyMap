@@ -41,6 +41,10 @@ const TAG_CATEGORY_ORDER = ["Еда", "Отдых", "Город", "Культу�
 
 const els = {};
 
+function isModerationMode() {
+  return window.MAP_MODERATION_MODE || window.MAP_DELETE_MODE;
+}
+
 function isMobileViewport() {
   return window.matchMedia("(max-width: 860px)").matches;
 }
@@ -511,12 +515,69 @@ function clearRoute() {
 async function loadLocations() {
   hideStatus();
   try {
-    const payload = await apiJson("/api/map/locations/approved");
+    const tg = window.Telegram?.WebApp;
+    const isModeration = isModerationMode() && !!tg?.initData;
+    const endpoint = isModeration
+      ? `/api/map/locations/moderation?init_data=${encodeURIComponent(tg.initData)}`
+      : "/api/map/locations/approved";
+    const payload = await apiJson(endpoint);
     allLocations = payload.items || [];
+    if (isModeration && window.MAP_FOCUS_LOCATION_ID) {
+      try {
+        const focusItem = await apiJson(
+          `/api/map/location/${window.MAP_FOCUS_LOCATION_ID}?init_data=${encodeURIComponent(tg.initData)}`
+        );
+        if (!allLocations.find((loc) => loc.id === focusItem.id)) {
+          allLocations.push(focusItem);
+        }
+      } catch (e) {
+        console.warn("Failed to load focused moderation location", e);
+      }
+    }
     applyFilters();
     if (!allLocations.length) showStatus("Пока нет одобренных локаций", true);
+    if (window.MAP_FOCUS_LOCATION_ID) {
+      setTimeout(() => selectLocation(Number(window.MAP_FOCUS_LOCATION_ID), true), 50);
+    }
   } catch {
     showStatus("Ошибка загрузки локаций", true);
+  }
+}
+
+async function deleteSelectedLocation() {
+  if (!window.MAP_DELETE_MODE) return;
+  if (!selectedLocation) {
+    showStatus("Сначала выберите локацию", true);
+    return;
+  }
+  const tg = window.Telegram?.WebApp;
+  if (!tg?.initData) {
+    showStatus("Удаление доступно только из Telegram", true);
+    return;
+  }
+  const ok = window.confirm(`Удалить локацию «${selectedLocation.name}»?`);
+  if (!ok) return;
+
+  try {
+    const response = await fetch("/api/webapp/moderation/delete-location", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location_id: selectedLocation.id,
+        init_data: tg.initData,
+        confirm: true,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok !== true) {
+      throw new Error(payload?.detail || `HTTP ${response.status}`);
+    }
+    showStatus("Локация удалена", true);
+    closeDetail();
+    await loadLocations();
+  } catch (e) {
+    console.error(e);
+    showStatus("Не удалось удалить локацию", true);
   }
 }
 
@@ -549,6 +610,13 @@ function bindEvents() {
   els.findMeBtn.addEventListener("click", findMe);
   els.buildRouteBtn.addEventListener("click", buildRoute);
   els.clearRouteBtn.addEventListener("click", clearRoute);
+  if (window.MAP_DELETE_MODE) {
+    els.buildRouteBtn.textContent = "🗑 Удалить локацию";
+    els.clearRouteBtn.classList.add("hidden");
+    els.buildRouteBtn.replaceWith(els.buildRouteBtn.cloneNode(true));
+    els.buildRouteBtn = document.getElementById("buildRouteBtn");
+    els.buildRouteBtn.addEventListener("click", deleteSelectedLocation);
+  }
   els.closeDetailBtn.addEventListener("click", closeDetail);
   if (els.photoLightboxClose) {
     els.photoLightboxClose.addEventListener("click", closePhotoLightbox);

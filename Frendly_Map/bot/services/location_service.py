@@ -28,7 +28,6 @@ class LocationService:
 
         user = db.query(User).filter(User.id == user_id).first()
         if user:
-            user.points += 5
             user.moderation_locations += 1
 
         db.commit()

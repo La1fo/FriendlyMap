@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     WEBAPP_ALLOWED_ORIGINS: str = "http://localhost:8000"
     WEBAPP_ALLOWED_METHODS: str = "GET,POST,OPTIONS"
     WEBAPP_ALLOWED_HEADERS: str = "Authorization,Content-Type,X-Requested-With"
+    ADMIN_IDS: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -68,6 +69,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def is_admin_id(user_id: int) -> bool:
+    return str(user_id) in settings.ADMIN_IDS.split(",")
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]

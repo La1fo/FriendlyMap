@@ -1,7 +1,12 @@
 from .start import start_handler
 from .profile import profile_handler, profile_menu_handler, profile_callback_handler
 from .add_location import add_location_handler
-from .moderation import pending_handler, moderation_callback_handler, moderation_detail_handler
+from .moderation import (
+    pending_handler,
+    moderation_callback_handler,
+    moderation_detail_handler,
+    moderation_extra_reward_handler,
+)
 from .moderation_menu import (
     moderation_menu_handler,
     moderation_menu_callback,
@@ -41,6 +46,7 @@ def get_all_handlers():
         pending_handler,
         moderation_callback_handler,
         moderation_detail_handler,
+        moderation_extra_reward_handler,
         moderation_menu_handler,
         moderation_menu_callback,
         moderation_locations_handler,

@@ -38,11 +38,14 @@ async def on_startup():
 @app.get("/map")
 async def map_page(request: Request):
     picker_mode = request.query_params.get("picker") == "1"
+    moderation_mode = request.query_params.get("moderation") == "1"
+    delete_mode = request.query_params.get("mod_delete") == "1"
 
     focus_lat = request.query_params.get("focus_lat")
     focus_lng = request.query_params.get("focus_lng")
     focus_name = request.query_params.get("focus_name") or "Точка"
     picker_chat_id = request.query_params.get("chat_id")
+    focus_location_id = request.query_params.get("focus_location_id")
     focus_point = None
     if focus_lat and focus_lng:
         try:
@@ -62,7 +65,10 @@ async def map_page(request: Request):
             "default_lng": settings.DEFAULT_MAP_LNG,
             "default_zoom": settings.DEFAULT_MAP_ZOOM,
             "picker_mode": picker_mode,
+            "moderation_mode": moderation_mode,
+            "delete_mode": delete_mode,
             "focus_point": focus_point,
+            "focus_location_id": int(focus_location_id) if focus_location_id and focus_location_id.isdigit() else None,
             "picker_chat_id": picker_chat_id,
         },
     )

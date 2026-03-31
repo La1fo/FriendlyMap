@@ -1,13 +1,15 @@
 import logging
 import json
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from webapp.database import get_db_context
+from shared.models.location import Location
 from shared.models.webapp_pick import WebAppPick
 from shared.webapp_auth import validate_telegram_init_data
-from webapp.config import settings
+from webapp.config import is_admin_id, settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,6 +29,12 @@ class PickerConfirmRequest(BaseModel):
         if len(normalized) > 5:
             raise ValueError("Можно выбрать не более 5 тегов")
         return normalized
+
+
+class DeleteLocationRequest(BaseModel):
+    location_id: int = Field(..., gt=0)
+    init_data: str
+    confirm: bool = False
 
 
 @router.post('/picker/confirm')
@@ -75,5 +83,36 @@ def confirm_picker_point(payload: PickerConfirmRequest):
             "longitude": payload.longitude,
             "tag_ids_count": len(payload.tag_ids),
         },
+    )
+    return {"ok": True}
+
+
+@router.post("/moderation/delete-location")
+def moderation_delete_location(payload: DeleteLocationRequest):
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="Требуется подтверждение удаления")
+    try:
+        user_payload = validate_telegram_init_data(payload.init_data, settings.BOT_TOKEN)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    moderator_id = int(user_payload["id"])
+    if not is_admin_id(moderator_id):
+        raise HTTPException(status_code=403, detail="Только для модераторов")
+
+    with get_db_context() as db:
+        loc = db.get(Location, payload.location_id)
+        if not loc or loc.status == "deleted":
+            raise HTTPException(status_code=404, detail="Локация не найдена")
+        loc.status = "deleted"
+        loc.approved_by = moderator_id
+        loc.moderated_at = datetime.utcnow()
+        db.commit()
+
+    logger.info(
+        "Delete via map confirmed",
+        extra={"moderator_id": moderator_id, "location_id": payload.location_id},
     )
     return {"ok": True}
