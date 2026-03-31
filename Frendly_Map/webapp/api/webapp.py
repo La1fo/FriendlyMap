@@ -31,6 +31,10 @@ class PickerConfirmRequest(BaseModel):
 
 @router.post('/picker/confirm')
 def confirm_picker_point(payload: PickerConfirmRequest):
+    logger.info(
+        "Received webapp picker confirm request",
+        extra={"chat_id": payload.chat_id, "tag_ids_count": len(payload.tag_ids)},
+    )
     try:
         user_payload = validate_telegram_init_data(payload.init_data, settings.BOT_TOKEN)
     except PermissionError as exc:

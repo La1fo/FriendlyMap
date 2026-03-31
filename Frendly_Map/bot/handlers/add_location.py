@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.error import BadRequest
 from telegram.ext._utils.types import CCT
 from telegram.ext import (
@@ -131,13 +131,21 @@ class _SyntheticUpdate:
 async def _poll_geo_pick_job(context: CCT):
     user_id = context.job.data["user_id"]
     chat_id = context.job.data["chat_id"]
-    await _advance_from_pending_pick(context.application, context.bot, user_id, chat_id)
+    try:
+        await _advance_from_pending_pick(context.application, context.bot, user_id, chat_id)
+    except Exception:
+        logger.exception("Geo-pick job polling failed", extra={"user_id": user_id, "chat_id": chat_id})
 
 
 async def _poll_geo_pick_task(application, user_id: int, chat_id: int):
     try:
         while True:
-            advanced = await _advance_from_pending_pick(application, application.bot, user_id, chat_id)
+            try:
+                advanced = await _advance_from_pending_pick(application, application.bot, user_id, chat_id)
+            except Exception:
+                logger.exception("Geo-pick async polling failed", extra={"user_id": user_id, "chat_id": chat_id})
+                await asyncio.sleep(1.0)
+                continue
             if advanced:
                 return
             await asyncio.sleep(1.0)
@@ -146,6 +154,10 @@ async def _poll_geo_pick_task(application, user_id: int, chat_id: int):
 
 
 async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: int) -> bool:
+    pick_id = None
+    lat = None
+    lng = None
+    raw_tag_ids = None
     with get_db_context() as db:
         pick = (
             db.query(WebAppPick)
@@ -162,11 +174,11 @@ async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: in
             logger.debug("No pending geo-pick record", extra={"user_id": user_id, "chat_id": chat_id, "flow": WEBAPP_FLOW_ADD_LOCATION})
             return False
 
-        logger.info("Geo-pick record found", extra={"user_id": user_id, "chat_id": chat_id, "pick_id": pick.id, "flow": WEBAPP_FLOW_ADD_LOCATION})
-        pick.processed = True
+        pick_id = pick.id
         lat = pick.latitude
         lng = pick.longitude
-        db.commit()
+        raw_tag_ids = pick.tag_ids_json
+        logger.info("Geo-pick record found", extra={"user_id": user_id, "chat_id": chat_id, "pick_id": pick_id, "flow": WEBAPP_FLOW_ADD_LOCATION})
 
     try:
         user_data = application.user_data[user_id]
@@ -184,7 +196,6 @@ async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: in
         LocationService.ensure_tags(db, TAG_CATALOG)
 
     tag_ids: list[int] = []
-    raw_tag_ids = getattr(pick, "tag_ids_json", None)
     if raw_tag_ids:
         try:
             parsed = json.loads(raw_tag_ids)
@@ -193,14 +204,35 @@ async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: in
         except json.JSONDecodeError:
             logger.warning("Invalid picker tag_ids_json payload", extra={"user_id": user_id, "chat_id": chat_id})
     user_data["selected_tag_ids"] = sorted(set(tag_ids))[:5]
+    try:
+        add_location_handler._conversations[_conversation_key(chat_id, user_id)] = ASK_PHOTO
+        logger.debug("Set conversation state to ASK_PHOTO", extra={"user_id": user_id, "chat_id": chat_id})
+        synthetic_update = _SyntheticUpdate(bot, user_id, chat_id)
+        fake_context = type("Ctx", (), {"bot": bot, "user_data": user_data})()
+        await _proceed_to_photo_step(synthetic_update, fake_context)
+    except Exception:
+        logger.exception(
+            "Failed to advance add-location conversation after geo-pick",
+            extra={"user_id": user_id, "chat_id": chat_id, "pick_id": pick_id},
+        )
+        return False
 
-    add_location_handler._conversations[_conversation_key(chat_id, user_id)] = ASK_PHOTO
-    logger.debug("Set conversation state to ASK_PHOTO", extra={"user_id": user_id, "chat_id": chat_id})
-    synthetic_update = _SyntheticUpdate(bot, user_id, chat_id)
+    with get_db_context() as db:
+        item = db.get(WebAppPick, pick_id)
+        if item is not None and not item.processed:
+            item.processed = True
+            db.commit()
 
-    fake_context = type("Ctx", (), {"bot": bot, "user_data": user_data})()
-    await _proceed_to_photo_step(synthetic_update, fake_context)
-    logger.info("Advanced add-location conversation after geo-pick", extra={"user_id": user_id, "chat_id": chat_id, "next_state": ASK_PHOTO, "tag_ids_count": len(user_data['selected_tag_ids'])})
+    logger.info(
+        "Advanced add-location conversation after geo-pick",
+        extra={
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "pick_id": pick_id,
+            "next_state": ASK_PHOTO,
+            "tag_ids_count": len(user_data["selected_tag_ids"]),
+        },
+    )
 
     task_name = _geo_task_name(user_id)
     task = application.bot_data.pop(task_name, None)
@@ -225,7 +257,7 @@ def _description_keyboard() -> InlineKeyboardMarkup:
 def _location_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url(f"/map?picker=1&chat_id={chat_id}")})],
+            [InlineKeyboardButton("🗺️ Открыть карту", web_app=WebAppInfo(url=build_webapp_url(f"/map?picker=1&chat_id={chat_id}")))],
             [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
