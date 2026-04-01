@@ -121,6 +121,8 @@ function initDom() {
   els.routeSummary = document.getElementById("routeSummary");
   els.buildRouteBtn = document.getElementById("buildRouteBtn");
   els.clearRouteBtn = document.getElementById("clearRouteBtn");
+  els.approvePendingBtn = document.getElementById("approvePendingBtn");
+  els.rejectPendingBtn = document.getElementById("rejectPendingBtn");
   els.closeDetailBtn = document.getElementById("closeDetailBtn");
   els.statusBar = document.getElementById("statusBar");
   els.confirmPointBtn = document.getElementById("confirmPointBtn");
@@ -463,6 +465,14 @@ function selectLocation(locationId, pan = false) {
   }
 
   els.routeSummary.classList.add("hidden");
+  if (els.approvePendingBtn) els.approvePendingBtn.classList.add("hidden");
+  if (els.rejectPendingBtn) els.rejectPendingBtn.classList.add("hidden");
+  const moderationActionAllowed = window.MAP_MODERATION_MODE && !window.MAP_DELETE_MODE && loc.status === "pending" && !!window.Telegram?.WebApp?.initData;
+  if (moderationActionAllowed) {
+    console.info("Pending location selected", { locationId: loc.id });
+    if (els.approvePendingBtn) els.approvePendingBtn.classList.remove("hidden");
+    if (els.rejectPendingBtn) els.rejectPendingBtn.classList.remove("hidden");
+  }
   els.detailPanel.classList.add("open");
 }
 
@@ -640,6 +650,37 @@ async function deleteSelectedLocation() {
   }
 }
 
+async function applyModerationAction(action) {
+  if (!selectedLocation || selectedLocation.status !== "pending") return;
+  const tg = window.Telegram?.WebApp;
+  if (!tg?.initData) {
+    showStatus("Действие доступно только модератору из Telegram", true);
+    return;
+  }
+  console.info(`${action} clicked`, { locationId: selectedLocation.id });
+  try {
+    const response = await fetch("/api/webapp/moderation/review-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        location_id: selectedLocation.id,
+        action,
+        init_data: tg.initData,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok !== true) {
+      throw new Error(payload?.detail || `HTTP ${response.status}`);
+    }
+    showStatus(action === "approve" ? "Локация одобрена" : "Локация отклонена", true);
+    await loadLocations();
+    closeDetail();
+  } catch (e) {
+    console.error(e);
+    showStatus("Не удалось выполнить действие модерации", true);
+  }
+}
+
 function bindEvents() {
   if (!window.MAP_PICKER_MODE) {
     els.searchInput.addEventListener("input", (e) => {
@@ -669,6 +710,12 @@ function bindEvents() {
   els.findMeBtn.addEventListener("click", findMe);
   els.buildRouteBtn.addEventListener("click", buildRoute);
   els.clearRouteBtn.addEventListener("click", clearRoute);
+  if (els.approvePendingBtn) {
+    els.approvePendingBtn.addEventListener("click", () => applyModerationAction("approve"));
+  }
+  if (els.rejectPendingBtn) {
+    els.rejectPendingBtn.addEventListener("click", () => applyModerationAction("reject"));
+  }
   if (window.MAP_DELETE_MODE && !isDeleteModeEnabled()) {
     showStatus("Режим удаления доступен только модератору из Telegram", true);
   }

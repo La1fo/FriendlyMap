@@ -87,3 +87,4 @@ def test_achievements_menu_after_sync_does_not_show_legacy(monkeypatch, tmp_path
     asyncio.run(achievements_handler_mod.achievements(update, context))
 
     assert "Legacy Visible" not in captured["caption"]
+    assert "approved" not in captured["caption"].lower()

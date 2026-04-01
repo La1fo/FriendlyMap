@@ -7,9 +7,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from webapp.database import get_db_context
 from shared.models.location import Location
+from shared.models.user import User
 from shared.models.webapp_pick import WebAppPick
 from shared.webapp_auth import validate_telegram_init_data
 from webapp.config import is_admin_id, settings
+from bot.services.gp_service import GPService
+from bot.services.achievements_manager import AchievementsManager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -35,6 +38,12 @@ class DeleteLocationRequest(BaseModel):
     location_id: int = Field(..., gt=0)
     init_data: str
     confirm: bool = False
+
+
+class ModerationReviewActionRequest(BaseModel):
+    location_id: int = Field(..., gt=0)
+    action: str = Field(..., pattern="^(approve|reject)$")
+    init_data: str
 
 
 @router.post('/picker/confirm')
@@ -127,3 +136,70 @@ def moderation_delete_location(payload: DeleteLocationRequest):
         extra={"moderator_id": moderator_id, "location_id": payload.location_id},
     )
     return {"ok": True}
+
+
+@router.post("/moderation/review-action")
+def moderation_review_action(payload: ModerationReviewActionRequest):
+    logger.info("Moderation review action clicked", extra={"location_id": payload.location_id, "action": payload.action})
+    try:
+        user_payload = validate_telegram_init_data(payload.init_data, settings.BOT_TOKEN)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    moderator_id = int(user_payload["id"])
+    if not is_admin_id(moderator_id):
+        raise HTTPException(status_code=403, detail="Только для модераторов")
+
+    achievements = AchievementsManager()
+    with get_db_context() as db:
+        loc = db.get(Location, payload.location_id)
+        if not loc:
+            raise HTTPException(status_code=404, detail="Локация не найдена")
+        if loc.status != "pending":
+            raise HTTPException(status_code=400, detail="Действие доступно только для pending-локаций")
+
+        owner = db.get(User, loc.user_id)
+        if payload.action == "approve":
+            loc.status = "approved"
+            loc.approved_by = moderator_id
+            loc.moderated_at = datetime.utcnow()
+            if owner:
+                owner.points += 15
+                owner.approved_locations += 1
+                owner.moderation_locations = max(owner.moderation_locations - 1, 0)
+                GPService.add_gp(db, owner.id, 10)
+                achievements.apply_event(
+                    db,
+                    owner.id,
+                    "coins_earned",
+                    15,
+                    event_key=f"webapp_approval_coins:{loc.id}",
+                )
+                achievements.apply_event(
+                    db,
+                    owner.id,
+                    "location_approved",
+                    1,
+                    event_key=f"webapp_approval:{loc.id}",
+                )
+        else:
+            loc.status = "rejected"
+            loc.approved_by = moderator_id
+            loc.moderated_at = datetime.utcnow()
+            if owner:
+                owner.points = max(owner.points - 5, 0)
+                owner.rejected_locations += 1
+                owner.moderation_locations = max(owner.moderation_locations - 1, 0)
+                achievements.apply_event(
+                    db,
+                    owner.id,
+                    "location_rejected",
+                    1,
+                    event_key=f"webapp_reject:{loc.id}",
+                )
+        db.commit()
+
+    logger.info("Moderation review action completed", extra={"location_id": payload.location_id, "action": payload.action})
+    return {"ok": True, "status": "approved" if payload.action == "approve" else "rejected"}

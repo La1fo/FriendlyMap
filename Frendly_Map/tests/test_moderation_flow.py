@@ -221,3 +221,6 @@ def test_review_mode_marker_styles_pending_red_approved_blue():
     assert "#dc2626" in content
     assert 'loc.status === "approved"' in content
     assert "#3b82f6" in content
+    assert 'loc.status === "pending"' in content
+    assert "applyModerationAction(\"approve\")" in content
+    assert "applyModerationAction(\"reject\")" in content
