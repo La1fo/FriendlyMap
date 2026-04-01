@@ -545,12 +545,22 @@ async function loadLocations() {
       }
     }
     applyFilters();
-    if (!allLocations.length) showStatus("Пока нет одобренных локаций", true);
+    if (!allLocations.length) {
+      if (window.MAP_DELETE_MODE) showStatus("Нет доступных локаций для удаления", true);
+      else if (window.MAP_MODERATION_MODE) showStatus("Нет локаций для модерации", true);
+      else showStatus("Пока нет одобренных локаций", true);
+    }
     if (window.MAP_FOCUS_LOCATION_ID) {
       setTimeout(() => selectLocation(Number(window.MAP_FOCUS_LOCATION_ID), true), 50);
     }
-  } catch {
+  } catch (e) {
+    if (window.MAP_DELETE_MODE) {
+      console.warn("Delete mode unavailable", e);
+      showStatus("Нет доступа к delete mode", true);
+      return;
+    }
     if (window.MAP_MODERATION_MODE) {
+      console.warn("Moderation map mode unavailable", e);
       showStatus("Нет доступа к moderation map mode", true);
       return;
     }

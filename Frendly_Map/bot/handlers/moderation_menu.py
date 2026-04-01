@@ -1,6 +1,6 @@
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update, WebAppInfo
 from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
@@ -322,11 +322,15 @@ async def delete_location_start(update: Update, context: ContextTypes.DEFAULT_TY
         await query.message.reply_text("⛔ Только для модераторов.")
         return
 
-    logger.info("Delete mode opened", extra={"moderator_id": update.effective_user.id})
+    delete_url = build_webapp_url("/map?mod_delete=1&moderation=1")
+    logger.info(
+        "Delete mode opened",
+        extra={"moderator_id": update.effective_user.id, "delete_url": delete_url},
+    )
     await query.edit_message_text(
         "🗑 Удаление локаций через карту.\n\nОткрой карту, выбери локацию и подтверди удаление.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🗺 Удалить через карту", web_app={"url": build_webapp_url("/map?mod_delete=1&moderation=1")})],
+            [InlineKeyboardButton("🗺 Удалить через карту", web_app=WebAppInfo(url=delete_url))],
             [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
         ]),
     )

@@ -89,7 +89,7 @@ def confirm_picker_point(payload: PickerConfirmRequest):
 
 @router.post("/moderation/delete-location")
 def moderation_delete_location(payload: DeleteLocationRequest):
-    logger.info("Delete via map requested", extra={"location_id": payload.location_id, "confirm": payload.confirm})
+    logger.info("Delete target location selected", extra={"location_id": payload.location_id, "confirm": payload.confirm})
     if not payload.confirm:
         logger.warning("Delete via map rejected: confirmation flag missing", extra={"location_id": payload.location_id})
         raise HTTPException(status_code=400, detail="Требуется подтверждение удаления")
@@ -110,13 +110,20 @@ def moderation_delete_location(payload: DeleteLocationRequest):
         if not loc or loc.status == "deleted":
             logger.warning("Delete via map failed: location not found", extra={"moderator_id": moderator_id, "location_id": payload.location_id})
             raise HTTPException(status_code=404, detail="Локация не найдена")
+        if loc.status != "approved":
+            logger.warning(
+                "Delete via map rejected: location is not approved",
+                extra={"moderator_id": moderator_id, "location_id": payload.location_id, "status": loc.status},
+            )
+            raise HTTPException(status_code=400, detail="Удаление доступно только для одобренных локаций")
+        logger.info("Delete confirmed", extra={"moderator_id": moderator_id, "location_id": payload.location_id})
         loc.status = "deleted"
         loc.approved_by = moderator_id
         loc.moderated_at = datetime.utcnow()
         db.commit()
 
     logger.info(
-        "Delete via map confirmed",
+        "Delete completed",
         extra={"moderator_id": moderator_id, "location_id": payload.location_id},
     )
     return {"ok": True}

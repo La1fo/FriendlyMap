@@ -185,5 +185,5 @@ def test_delete_menu_contains_map_delete_mode_button(monkeypatch, tmp_path):
 
     first_row_button = edited["markup"].inline_keyboard[0][0]
     assert first_row_button.text == "🗺 Удалить через карту"
-    assert "mod_delete=1" in first_row_button.web_app["url"]
+    assert "mod_delete=1" in first_row_button.web_app.url
     assert len(edited["markup"].inline_keyboard) == 2

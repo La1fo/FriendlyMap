@@ -88,3 +88,31 @@ def test_delete_via_map_requires_admin(monkeypatch):
     )
     assert ok.status_code == 200
     assert ok.json()["ok"] is True
+
+
+def test_delete_via_map_requires_confirmation_and_approved_status(monkeypatch):
+    bot_token = "123:ABC"
+    monkeypatch.setattr("webapp.api.webapp.settings.BOT_TOKEN", bot_token)
+    monkeypatch.setattr("webapp.api.webapp.settings.ADMIN_IDS", "9001")
+    monkeypatch.setattr("webapp.config.settings.ADMIN_IDS", "9001")
+
+    init_data_admin = _build_init_data({"id": 9001, "first_name": "A"}, bot_token)
+
+    init_db()
+    with get_db_context() as db:
+        db.add(Location(id=2991, user_id=9001, name="Approved L", latitude=1.0, longitude=2.0, status="approved"))
+        db.add(Location(id=2992, user_id=9001, name="Pending L", latitude=2.0, longitude=3.0, status="pending"))
+        db.commit()
+
+    client = TestClient(app)
+    no_confirm = client.post(
+        "/api/webapp/moderation/delete-location",
+        json={"location_id": 2991, "init_data": init_data_admin, "confirm": False},
+    )
+    assert no_confirm.status_code == 400
+
+    pending_rejected = client.post(
+        "/api/webapp/moderation/delete-location",
+        json={"location_id": 2992, "init_data": init_data_admin, "confirm": True},
+    )
+    assert pending_rejected.status_code == 400
