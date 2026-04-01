@@ -56,7 +56,13 @@ def test_moderation_locations_require_admin(monkeypatch):
             user = User(id=19002, telegram_id=19002, username="pending_user", total_gp=0, points=0)
             db.add(user)
             db.flush()
+        user2 = db.get(User, 19003)
+        if not user2:
+            user2 = User(id=19003, telegram_id=19003, username="approved_user", total_gp=0, points=0)
+            db.add(user2)
+            db.flush()
         db.add(Location(user_id=19002, name="Pending L", latitude=1.0, longitude=2.0, status="pending"))
+        db.add(Location(user_id=19003, name="Approved L", latitude=2.0, longitude=3.0, status="approved"))
         db.commit()
 
     client = TestClient(app)
@@ -67,6 +73,7 @@ def test_moderation_locations_require_admin(monkeypatch):
     assert ok.status_code == 200
     names = [item["name"] for item in ok.json()["items"]]
     assert "Pending L" in names
+    assert "Approved L" in names
 
     pending_ids = [item["id"] for item in ok.json()["items"] if item["name"] == "Pending L"]
     focused = client.get(f"/api/map/location/{pending_ids[-1]}", params={"init_data": init_data_admin})

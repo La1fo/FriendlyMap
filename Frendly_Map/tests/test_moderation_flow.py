@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 
 from bot.handlers import moderation, moderation_menu
@@ -187,3 +188,46 @@ def test_delete_menu_contains_map_delete_mode_button(monkeypatch, tmp_path):
     assert first_row_button.text == "🗺 Удалить через карту"
     assert "mod_delete=1" in first_row_button.web_app.url
     assert len(edited["markup"].inline_keyboard) == 2
+
+
+def test_moderation_locations_handler_has_location_import_and_no_nameerror(monkeypatch, tmp_path):
+    SessionLocal = _setup_db(tmp_path)
+    with SessionLocal() as db:
+        db.add(User(id=101, telegram_id=101, username="pending_author", points=0, total_gp=0))
+        db.add(Location(id=1001, user_id=101, name="Pending Review", latitude=1.0, longitude=2.0, status="pending"))
+        db.commit()
+
+    @contextmanager
+    def fake_db_context():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    edited = {}
+
+    async def fake_edit_message_text(text, reply_markup):
+        edited["text"] = text
+        edited["markup"] = reply_markup
+
+    async def fake_answer():
+        return None
+
+    monkeypatch.setattr(moderation_menu, "get_db_context", fake_db_context)
+    monkeypatch.setattr(moderation_menu, "_ensure_admin", lambda _u: True)
+
+    query = SimpleNamespace(answer=fake_answer, edit_message_text=fake_edit_message_text)
+    update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=9001))
+    context = SimpleNamespace()
+
+    asyncio.run(moderation_menu.moderation_locations(update, context))
+    assert "Выберите локацию" in edited["text"]
+    assert edited["markup"].inline_keyboard[0][0].text.startswith("Pending Review")
+
+
+def test_review_mode_pending_marker_style_is_red():
+    script_path = Path(__file__).resolve().parents[1] / "webapp" / "static" / "script.js"
+    content = script_path.read_text(encoding="utf-8")
+    assert 'loc.status === "pending"' in content
+    assert "#dc2626" in content

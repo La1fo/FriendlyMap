@@ -108,7 +108,7 @@ async def get_moderation_locations(
     db: Session = Depends(get_db_session),
 ):
     _ensure_admin_webapp(init_data)
-    locations = db.query(Location).filter(Location.status.in_(["pending", "approved", "rejected"])).all()
+    locations = db.query(Location).filter(Location.status.in_(["pending", "approved"])).all()
     logger.info("Moderation review mode opened", extra={"locations_count": len(locations)})
     return {"items": [_serialize_location(db, loc) for loc in locations], "count": len(locations)}
 

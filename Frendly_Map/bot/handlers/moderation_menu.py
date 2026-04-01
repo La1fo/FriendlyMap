@@ -12,6 +12,7 @@ from telegram.ext import (
 )
 
 from bot.database import get_db_context
+from bot.models.location import Location
 from bot.models.user import User
 from bot.services.gp_service import GPService
 from bot.utils.common import is_admin

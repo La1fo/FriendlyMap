@@ -337,12 +337,37 @@ function renderTags(tags) {
   renderSelectedTags();
 }
 
+function createLocationMarker(loc) {
+  const isFocusedPending =
+    window.MAP_MODERATION_MODE &&
+    loc.status === "pending" &&
+    Number(window.MAP_FOCUS_LOCATION_ID) === Number(loc.id);
+
+  if (window.MAP_MODERATION_MODE && loc.status === "pending") {
+    const marker = L.circleMarker([loc.latitude, loc.longitude], {
+      radius: isFocusedPending ? 10 : 8,
+      color: isFocusedPending ? "#991b1b" : "#dc2626",
+      weight: isFocusedPending ? 3 : 2,
+      fillColor: isFocusedPending ? "#ef4444" : "#f87171",
+      fillOpacity: 0.9,
+    }).addTo(map);
+    marker.bindTooltip(isFocusedPending ? "🛠 Текущая модерируемая точка" : "⏳ Pending", {
+      permanent: isFocusedPending,
+      direction: "top",
+      offset: [0, -8],
+    });
+    return marker;
+  }
+
+  return L.marker([loc.latitude, loc.longitude]).addTo(map);
+}
+
 function renderMarkers(locations) {
   markersById.forEach((marker) => map.removeLayer(marker));
   markersById.clear();
 
   locations.forEach((loc) => {
-    const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
+    const marker = createLocationMarker(loc);
     marker.on("click", () => selectLocation(loc.id, true));
     markersById.set(loc.id, marker);
   });
