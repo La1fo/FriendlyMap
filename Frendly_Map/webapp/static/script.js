@@ -521,8 +521,11 @@ async function loadLocations() {
   try {
     const tg = window.Telegram?.WebApp;
     const isModeration = isModerationMode() && !!tg?.initData;
+    const moderationEndpoint = window.MAP_DELETE_MODE
+      ? "/api/map/locations/moderation-delete"
+      : "/api/map/locations/moderation";
     const endpoint = isModeration
-      ? `/api/map/locations/moderation?init_data=${encodeURIComponent(tg.initData)}`
+      ? `${moderationEndpoint}?init_data=${encodeURIComponent(tg.initData)}`
       : "/api/map/locations/approved";
     const payload = await apiJson(endpoint);
     allLocations = payload.items || [];
@@ -531,11 +534,13 @@ async function loadLocations() {
         const focusItem = await apiJson(
           `/api/map/location/${window.MAP_FOCUS_LOCATION_ID}?init_data=${encodeURIComponent(tg.initData)}`
         );
+        console.info("Pending location context found", { locationId: focusItem.id, status: focusItem.status });
         if (!allLocations.find((loc) => loc.id === focusItem.id)) {
           allLocations.push(focusItem);
         }
       } catch (e) {
         console.warn("Failed to load focused moderation location", e);
+        console.warn("Pending location context not found", { locationId: window.MAP_FOCUS_LOCATION_ID });
         showStatus("Модерируемая локация не найдена или недоступна", true);
       }
     }

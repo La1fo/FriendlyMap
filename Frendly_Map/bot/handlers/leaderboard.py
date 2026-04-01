@@ -7,7 +7,7 @@ from bot.services.leaderboard_service import LeaderboardService
 from shared.rank import get_rank_progress
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
-LEADERBOARD_SEPARATOR = "──────────────────────────────"
+LEADERBOARD_SEPARATOR = "──────────────────────"
 
 
 def _format_leaderboard_gp(rank_payload: dict[str, int | str]) -> str:

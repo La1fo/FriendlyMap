@@ -1,4 +1,5 @@
 import json
+import logging
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -18,6 +19,7 @@ from shared.webapp_auth import validate_telegram_init_data
 from webapp.config import is_admin_id, settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _get_user_position(db: Session, user: User) -> int:
@@ -106,8 +108,24 @@ async def get_moderation_locations(
     db: Session = Depends(get_db_session),
 ):
     _ensure_admin_webapp(init_data)
-    locations = db.query(Location).filter(Location.status != "deleted").all()
+    locations = db.query(Location).filter(Location.status.in_(["pending", "approved", "rejected"])).all()
+    logger.info("Moderation review mode opened", extra={"locations_count": len(locations)})
     return {"items": [_serialize_location(db, loc) for loc in locations], "count": len(locations)}
+
+
+@router.get("/locations/moderation-delete")
+async def get_moderation_delete_locations(
+    init_data: str = Query(..., min_length=1),
+    db: Session = Depends(get_db_session),
+):
+    _ensure_admin_webapp(init_data)
+    approved_locations = db.query(Location).filter(Location.status == "approved").all()
+    non_approved = db.query(Location).filter(Location.status != "approved").count()
+    logger.info(
+        "Delete mode available locations loaded",
+        extra={"approved_count": len(approved_locations), "filtered_out_count": int(non_approved)},
+    )
+    return {"items": [_serialize_location(db, loc) for loc in approved_locations], "count": len(approved_locations)}
 
 
 @router.get("/location/{location_id}")

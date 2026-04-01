@@ -72,3 +72,8 @@ def test_moderation_locations_require_admin(monkeypatch):
     focused = client.get(f"/api/map/location/{pending_ids[-1]}", params={"init_data": init_data_admin})
     assert focused.status_code == 200
     assert focused.json()["status"] == "pending"
+
+    delete_view = client.get("/api/map/locations/moderation-delete", params={"init_data": init_data_admin})
+    assert delete_view.status_code == 200
+    statuses = {item["status"] for item in delete_view.json()["items"]}
+    assert statuses == {"approved"} or statuses == set()

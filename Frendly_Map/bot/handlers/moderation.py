@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, ConversationHandler, filters
 
 from datetime import datetime
@@ -130,6 +130,11 @@ async def show_location_detail(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     owner_name = f"@{owner.username}" if owner and owner.username else "Без ника"
+    review_url = build_webapp_url(f"/map?moderation=1&focus_location_id={loc.id}")
+    logger.info(
+        "Moderation review URL built",
+        extra={"moderator_id": uid, "location_id": loc.id, "review_url": review_url},
+    )
     text = (
         f"📍 <b>{loc.name}</b>\n"
         f"📝 {loc.description or 'Без описания'}\n"
@@ -146,11 +151,12 @@ async def show_location_detail(update: Update, context: ContextTypes.DEFAULT_TYP
         [
             InlineKeyboardButton(
                 "🗺️ Карта",
-                web_app={"url": build_webapp_url(f"/map?moderation=1&focus_location_id={loc.id}")},
+                web_app=WebAppInfo(url=review_url),
             )
         ],
         [InlineKeyboardButton("◀️ Назад", callback_data="mod_locations")],
     ])
+    logger.info("Moderation review button clicked", extra={"moderator_id": uid, "location_id": loc.id})
 
     await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
 
