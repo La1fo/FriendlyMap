@@ -71,6 +71,8 @@ def test_moderation_locations_require_admin(monkeypatch):
 
     ok = client.get("/api/map/locations/moderation", params={"init_data": init_data_admin})
     assert ok.status_code == 200
+    statuses = {item["status"] for item in ok.json()["items"]}
+    assert statuses <= {"pending", "approved"}
     names = [item["name"] for item in ok.json()["items"]]
     assert "Pending L" in names
     assert "Approved L" in names

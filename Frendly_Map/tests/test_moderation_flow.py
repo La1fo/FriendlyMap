@@ -66,6 +66,7 @@ def test_location_detail_shows_actions_without_auto_photo(monkeypatch, tmp_path)
     assert buttons[0][0].text == "✔️ Одобрить"
     assert buttons[0][1].text == "❌ Отклонить"
     assert buttons[1][0].text == "🗺️ Карта"
+    assert "moderation=1" in buttons[1][0].web_app.url
     assert "focus_location_id=10" in buttons[1][0].web_app.url
     assert sent_photos == []
 
