@@ -1,4 +1,5 @@
 import logging
+from html import escape
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, ConversationHandler, filters
 
@@ -144,17 +145,20 @@ async def show_location_detail(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     owner_name = f"@{owner.username}" if owner and owner.username else "Без ника"
+    safe_name = escape(loc.name or "", quote=False)
+    safe_desc = escape(loc.description or "Без описания", quote=False)
+    safe_owner = escape(owner_name, quote=False)
     review_url = build_webapp_url(f"/map?moderation=1&focus_location_id={loc.id}")
     logger.info(
         "Moderation review URL built",
         extra={"moderator_id": uid, "location_id": loc.id, "review_url": review_url},
     )
     text = (
-        f"📍 <b>{loc.name}</b>\n"
-        f"📝 {loc.description or 'Без описания'}\n"
-        f"👤 Автор: {owner_name}\n"
+        f"📍 <b>{safe_name}</b>\n"
+        f"📝 {safe_desc}\n"
+        f"👤 Автор: {safe_owner}\n"
         f"🌍 {loc.latitude}, {loc.longitude}\n"
-        f"🗺️ Статус: {loc.status}"
+        f"🗺️ Статус: {escape(loc.status or '', quote=False)}"
     )
 
     kb = InlineKeyboardMarkup([

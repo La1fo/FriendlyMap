@@ -1,4 +1,5 @@
 import json
+from html import escape
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -28,6 +29,10 @@ def _progress_bar(progress: int, target: int, width: int = 8) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
+def _safe_html_text(value: str | None) -> str:
+    return escape(value or "", quote=False)
+
+
 async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     manager = AchievementsManager()
@@ -48,7 +53,7 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         header = "⏱️ Временные достижения" if view_type == "ranked" else "📌 Постоянные достижения"
         lines = [header]
         if view_type == "ranked":
-            lines.extend([f"Сезон: <b>{current_season.key}</b>", ""])
+            lines.extend([f"Сезон: {_safe_html_text(current_season.key)}", ""])
 
         for idx, achievement in enumerate(achievements_list, start=1):
             if idx > 1:
@@ -63,21 +68,25 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reward += f", +{achievement.pts_reward}📍 GP"
 
             scale = _progress_bar(progress, target)
+            safe_name = _safe_html_text(achievement.name)
+            safe_description = _safe_html_text(achievement.description)
             lines.append(
                 "\n".join([
-                    f"{achievement.icon} <b>{achievement.name}</b>",
-                    achievement.description,
-                    f"Шкала: <b>{scale}</b>",
-                    f"Прогресс: <b>{min(progress, target)}/{target}</b>",
-                    f"Статус: <b>{'✅ выполнено' if completed else '⏳ в процессе'}</b>",
-                    f"Награда: <b>{reward}</b>",
+                    f"{achievement.icon} {safe_name}",
+                    safe_description,
+                    f"Шкала: {scale}",
+                    f"Прогресс: {min(progress, target)}/{target}",
+                    f"Статус: {'✅ выполнено' if completed else '⏳ в процессе'}",
+                    f"Награда: {reward}",
                 ])
             )
             lines.append("")
 
     banner = get_section_banner("achievements")
     details = "\n".join(lines).strip() if lines else "Достижения не найдены."
-    caption = f"<b>{banner['title']}</b>\n{banner['description']}\n\n{details}".strip()
+    safe_title = _safe_html_text(banner["title"])
+    safe_description = _safe_html_text(banner["description"])
+    caption = f"<b>{safe_title}</b>\n{safe_description}\n\n{details}".strip()
     if len(caption) > 1024:
         caption = caption[:1021] + "..."
 
