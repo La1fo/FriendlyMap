@@ -536,6 +536,7 @@ async function loadLocations() {
         }
       } catch (e) {
         console.warn("Failed to load focused moderation location", e);
+        showStatus("Модерируемая локация не найдена или недоступна", true);
       }
     }
     applyFilters();
@@ -544,6 +545,10 @@ async function loadLocations() {
       setTimeout(() => selectLocation(Number(window.MAP_FOCUS_LOCATION_ID), true), 50);
     }
   } catch {
+    if (window.MAP_MODERATION_MODE) {
+      showStatus("Нет доступа к moderation map mode", true);
+      return;
+    }
     showStatus("Ошибка загрузки локаций", true);
   }
 }
@@ -555,8 +560,12 @@ async function deleteSelectedLocation() {
     return;
   }
   const tg = window.Telegram?.WebApp;
+  console.info("Delete target location selected", { locationId: selectedLocation.id });
   const ok = window.confirm(`Удалить локацию «${selectedLocation.name}»?`);
-  if (!ok) return;
+  if (!ok) {
+    console.info("Delete cancelled", { locationId: selectedLocation.id });
+    return;
+  }
 
   try {
     const response = await fetch("/api/webapp/moderation/delete-location", {

@@ -67,3 +67,8 @@ def test_moderation_locations_require_admin(monkeypatch):
     assert ok.status_code == 200
     names = [item["name"] for item in ok.json()["items"]]
     assert "Pending L" in names
+
+    pending_ids = [item["id"] for item in ok.json()["items"] if item["name"] == "Pending L"]
+    focused = client.get(f"/api/map/location/{pending_ids[-1]}", params={"init_data": init_data_admin})
+    assert focused.status_code == 200
+    assert focused.json()["status"] == "pending"

@@ -1,4 +1,3 @@
-from datetime import datetime
 import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
@@ -13,8 +12,6 @@ from telegram.ext import (
 )
 
 from bot.database import get_db_context
-from bot.models.location import Location
-from bot.models.photo import Photo
 from bot.models.user import User
 from bot.services.gp_service import GPService
 from bot.utils.common import is_admin
@@ -22,7 +19,6 @@ from bot.utils.section_banners import get_section_banner, send_section_banner
 from bot.utils.webapp import build_webapp_url
 
 POINTS_ACTION, POINTS_TYPE, POINTS_SELECT_USER, POINTS_AMOUNT, POINTS_CUSTOM = range(5)
-DEL_SELECT = 5
 logger = logging.getLogger(__name__)
 
 def _ensure_admin(update: Update) -> bool:
@@ -324,130 +320,16 @@ async def delete_location_start(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     if not _ensure_admin(update):
         await query.message.reply_text("⛔ Только для модераторов.")
-        return ConversationHandler.END
+        return
 
-    context.user_data["moderation_menu_message_id"] = query.message.message_id
-    context.user_data.pop("delete_locations_active", None)
     logger.info("Delete mode opened", extra={"moderator_id": update.effective_user.id})
-    await render_delete_locations(update, context)
-    return DEL_SELECT
-
-
-async def render_delete_locations(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    with get_db_context() as db:
-        locations = db.query(Location).filter(Location.status != "deleted").limit(20).all()
-
-    flash = context.user_data.pop("delete_flash", None)
-    if not locations:
-        menu_message_id = context.user_data.get("moderation_menu_message_id")
-        if menu_message_id:
-            text_value = "Локаций нет."
-            if flash:
-                text_value = f"{flash}\n\n{text_value}"
-            await context.bot.edit_message_text(
-                text_value,
-                chat_id=update.effective_user.id,
-                message_id=menu_message_id,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="moderation")]
-                ])
-            )
-        return
-
-    keyboard = [[InlineKeyboardButton("🗺 Удалить через карту", web_app={"url": build_webapp_url("/map?mod_delete=1&moderation=1")})]]
-    keyboard.extend(
-        [InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"del_loc_{loc.id}")]
-        for loc in locations
-    )
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="moderation")])
-    menu_message_id = context.user_data.get("moderation_menu_message_id")
-    text_value = "Выберите локацию:"
-    if flash:
-        text_value = f"{flash}\n\n{text_value}"
-    if menu_message_id:
-        await context.bot.edit_message_text(
-            text_value,
-            chat_id=update.effective_user.id,
-            message_id=menu_message_id,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    else:
-        target = update.message or (update.callback_query.message if update.callback_query else None)
-        if target:
-            sent = await target.reply_text(
-                text_value,
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            context.user_data["moderation_menu_message_id"] = sent.message_id
-
-
-async def delete_location_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    loc_id = int(query.data.split("_")[-1])
-    context.user_data["delete_loc_id"] = loc_id
-    logger.info("Delete target location selected", extra={"moderator_id": update.effective_user.id, "location_id": loc_id})
     await query.edit_message_text(
-        "Действия с локацией:",
+        "🗑 Удаление локаций через карту.\n\nОткрой карту, выбери локацию и подтверди удаление.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("ℹ️ Подробнее", callback_data=f"del_loc_info_{loc_id}")],
-            [InlineKeyboardButton("🗑 Удалить", callback_data=f"del_loc_confirm_{loc_id}")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="mod_delete_location")],
-        ])
+            [InlineKeyboardButton("🗺 Удалить через карту", web_app={"url": build_webapp_url("/map?mod_delete=1&moderation=1")})],
+            [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
+        ]),
     )
-    return DEL_SELECT
-
-
-async def delete_location_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    loc_id = int(query.data.split("_")[-1])
-    with get_db_context() as db:
-        loc = db.query(Location).filter(Location.id == loc_id).first()
-        photos = (
-            db.query(Photo)
-            .filter(Photo.location_id == loc_id)
-            .order_by(Photo.order_index.asc())
-            .all()
-        ) if loc else []
-
-    if not loc:
-        await query.edit_message_text("⚠️ Локация не найдена.")
-        return
-
-    info = (
-        f"📍 {loc.name}\n"
-        f"📝 {loc.description or 'Без описания'}\n"
-        f"🌍 {loc.latitude}, {loc.longitude}\n"
-        f"🗺️ Статус: {loc.status}"
-    )
-    await query.edit_message_text(
-        info,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data=f"del_loc_{loc_id}")],
-        ])
-    )
-    for photo in photos[:5]:
-        await context.bot.send_photo(chat_id=query.message.chat_id, photo=photo.file_id)
-
-
-async def delete_location_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    loc_id = int(query.data.split("_")[-1])
-    with get_db_context() as db:
-        loc = db.query(Location).filter(Location.id == loc_id).first()
-        if not loc:
-            await query.edit_message_text("⚠️ Локация не найдена.")
-            return
-        loc.status = "deleted"
-        loc.moderated_at = datetime.utcnow()
-        loc.approved_by = update.effective_user.id
-        db.commit()
-
-    context.user_data.pop("delete_loc_id", None)
-    context.user_data["delete_flash"] = "✅ Локация удалена."
-    await render_delete_locations(update, context)
 
 
 async def delete_locations_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -482,17 +364,6 @@ points_handler = ConversationHandler(
     allow_reentry=True,
 )
 
-delete_location_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(delete_location_start, pattern="^mod_delete_location$")],
-    states={
-        DEL_SELECT: [
-            CallbackQueryHandler(delete_location_select, pattern="^del_loc_\\d+$"),
-            CallbackQueryHandler(delete_location_info, pattern="^del_loc_info_\\d+$"),
-            CallbackQueryHandler(delete_location_confirm, pattern="^del_loc_confirm_\\d+$"),
-        ],
-    },
-    fallbacks=[CommandHandler("cancel", moderation_menu)],
-    allow_reentry=True,
-)
+delete_location_handler = CallbackQueryHandler(delete_location_start, pattern="^mod_delete_location$")
 
 moderation_delete_back_handler = MessageHandler(filters.Regex("^◀️ Назад$"), delete_locations_back)
