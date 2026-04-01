@@ -55,6 +55,8 @@ DEFINITIONS: List[AchievementDefinition] = [
 
 class AchievementsManager:
     def ensure_definitions(self, db: Session) -> None:
+        valid_codes = {definition.code for definition in DEFINITIONS}
+
         for definition in DEFINITIONS:
             achievement = db.query(Achievement).filter(Achievement.code == definition.code).first()
             if not achievement:
@@ -68,6 +70,10 @@ class AchievementsManager:
             achievement.type = definition.type
             achievement.is_seasonal = definition.type == "ranked"
             achievement.conditions = definition.conditions_json()
+
+        legacy = db.query(Achievement).filter(~Achievement.code.in_(valid_codes)).all()
+        for achievement in legacy:
+            db.delete(achievement)
         db.commit()
 
     def get_current_season(self, db: Session, now: Optional[datetime] = None) -> Season:
