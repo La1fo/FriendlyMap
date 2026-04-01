@@ -191,21 +191,7 @@ def test_delete_menu_contains_map_delete_mode_button(monkeypatch, tmp_path):
     assert len(edited["markup"].inline_keyboard) == 2
 
 
-def test_moderation_locations_handler_has_location_import_and_no_nameerror(monkeypatch, tmp_path):
-    SessionLocal = _setup_db(tmp_path)
-    with SessionLocal() as db:
-        db.add(User(id=101, telegram_id=101, username="pending_author", points=0, total_gp=0))
-        db.add(Location(id=1001, user_id=101, name="Pending Review", latitude=1.0, longitude=2.0, status="pending"))
-        db.commit()
-
-    @contextmanager
-    def fake_db_context():
-        db = SessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
+def test_moderation_locations_handler_opens_review_map_from_menu(monkeypatch, tmp_path):
     edited = {}
 
     async def fake_edit_message_text(text, reply_markup):
@@ -215,7 +201,6 @@ def test_moderation_locations_handler_has_location_import_and_no_nameerror(monke
     async def fake_answer():
         return None
 
-    monkeypatch.setattr(moderation_menu, "get_db_context", fake_db_context)
     monkeypatch.setattr(moderation_menu, "_ensure_admin", lambda _u: True)
 
     query = SimpleNamespace(answer=fake_answer, edit_message_text=fake_edit_message_text)
@@ -223,12 +208,16 @@ def test_moderation_locations_handler_has_location_import_and_no_nameerror(monke
     context = SimpleNamespace()
 
     asyncio.run(moderation_menu.moderation_locations(update, context))
-    assert "Выберите локацию" in edited["text"]
-    assert edited["markup"].inline_keyboard[0][0].text.startswith("Pending Review")
+    assert "Открой карту модерации" in edited["text"]
+    map_button = edited["markup"].inline_keyboard[0][0]
+    assert map_button.text == "🗺️ Открыть карту модерации"
+    assert "moderation=1" in map_button.web_app.url
 
 
-def test_review_mode_pending_marker_style_is_red():
+def test_review_mode_marker_styles_pending_red_approved_blue():
     script_path = Path(__file__).resolve().parents[1] / "webapp" / "static" / "script.js"
     content = script_path.read_text(encoding="utf-8")
     assert 'loc.status === "pending"' in content
     assert "#dc2626" in content
+    assert 'loc.status === "approved"' in content
+    assert "#3b82f6" in content

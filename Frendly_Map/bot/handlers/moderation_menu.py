@@ -12,7 +12,6 @@ from telegram.ext import (
 )
 
 from bot.database import get_db_context
-from bot.models.location import Location
 from bot.models.user import User
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.gp_service import GPService
@@ -139,24 +138,14 @@ async def moderation_locations(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("⛔ Только для модераторов.")
         return
 
-    with get_db_context() as db:
-        locations = db.query(Location).filter(Location.status == "pending").order_by(Location.created_at.asc()).limit(20).all()
-
-    if not locations:
-        await query.edit_message_text(
-            "📍 Модерация локаций\n\nСейчас нет локаций на модерацию.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="moderation")]]),
-        )
-        return
-
-    keyboard = [
-        [InlineKeyboardButton(f"{loc.name} (#{loc.id})", callback_data=f"loc_detail_{loc.id}")]
-        for loc in locations
-    ]
-    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="moderation")])
+    review_url = build_webapp_url("/map?moderation=1")
+    logger.info("Moderation review mode opened from menu", extra={"moderator_id": update.effective_user.id, "review_url": review_url})
     await query.edit_message_text(
-        "📍 Модерация локаций\nВыберите локацию:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "📍 Модерация локаций\n\nОткрой карту модерации: pending точки отмечены красным, approved — синим.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🗺️ Открыть карту модерации", web_app=WebAppInfo(url=review_url))],
+            [InlineKeyboardButton("◀️ Назад", callback_data="moderation")],
+        ]),
     )
 
 

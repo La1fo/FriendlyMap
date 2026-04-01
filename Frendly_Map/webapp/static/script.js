@@ -359,6 +359,16 @@ function createLocationMarker(loc) {
     return marker;
   }
 
+  if (window.MAP_MODERATION_MODE && loc.status === "approved") {
+    return L.circleMarker([loc.latitude, loc.longitude], {
+      radius: 7,
+      color: "#1d4ed8",
+      weight: 2,
+      fillColor: "#3b82f6",
+      fillOpacity: 0.85,
+    }).addTo(map);
+  }
+
   return L.marker([loc.latitude, loc.longitude]).addTo(map);
 }
 
