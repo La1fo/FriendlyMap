@@ -6,6 +6,7 @@ from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes, Mes
 from datetime import datetime
 from bot.database import get_db_context
 from bot.models.location import Location
+from shared.models.moderation_followup import ModerationFollowup
 from bot.models.user import User
 from bot.utils.common import is_admin
 from bot.utils.webapp import build_webapp_url
@@ -182,6 +183,33 @@ async def show_location_detail(update: Update, context: ContextTypes.DEFAULT_TYP
 async def extra_reward_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    if query.data.startswith("web_bonus_"):
+        _, _, reward_type, followup_id_raw = query.data.split("_", 3)
+        try:
+            followup_id = int(followup_id_raw)
+        except ValueError:
+            await moderation_menu(update, context)
+            return ConversationHandler.END
+        with get_db_context() as db:
+            followup = db.get(ModerationFollowup, followup_id)
+            if not followup or followup.status != "pending" or followup.moderator_id != update.effective_user.id:
+                await moderation_menu(update, context)
+                return ConversationHandler.END
+            if reward_type == "skip":
+                followup.status = "handled"
+                followup.handled_at = datetime.utcnow()
+                db.commit()
+                logger.info("Bonus step skipped", extra={"followup_id": followup_id, "moderator_id": update.effective_user.id})
+                await moderation_menu(update, context)
+                return ConversationHandler.END
+            context.user_data["extra_reward_location_id"] = followup.location_id
+            context.user_data["extra_reward_user_id"] = followup.owner_id
+            context.user_data["extra_reward_followup_id"] = followup.id
+            context.user_data["extra_reward_type"] = "coins" if reward_type == "coins" else "gp"
+            prompt = "Введите количество доп монет:" if reward_type == "coins" else "Введите количество доп GP (1..60):"
+            await query.edit_message_text(prompt)
+            return EXTRA_REWARD_AMOUNT
+
     if not _can_apply_extra_reward(context):
         await moderation_menu(update, context)
         return
@@ -238,6 +266,13 @@ async def extra_reward_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             db.commit()
             logger.info("Extra coins granted", extra={"location_id": location_id, "moderator_id": update.effective_user.id, "owner_id": user.id, "amount": amount})
+        followup_id = context.user_data.get("extra_reward_followup_id")
+        if followup_id:
+            followup = db.get(ModerationFollowup, int(followup_id))
+            if followup and followup.status == "pending":
+                followup.status = "handled"
+                followup.handled_at = datetime.utcnow()
+                db.commit()
 
     await update.message.reply_text("✅ Доп награда начислена.")
     _clear_extra_reward_state(context)
@@ -250,14 +285,14 @@ def _can_apply_extra_reward(context: ContextTypes.DEFAULT_TYPE) -> bool:
 
 
 def _clear_extra_reward_state(context: ContextTypes.DEFAULT_TYPE) -> None:
-    for key in ("extra_reward_location_id", "extra_reward_user_id", "extra_reward_type"):
+    for key in ("extra_reward_location_id", "extra_reward_user_id", "extra_reward_type", "extra_reward_followup_id"):
         context.user_data.pop(key, None)
 
 pending_handler = CommandHandler("pending", pending)
 moderation_callback_handler = CallbackQueryHandler(handle_callback, pattern="^(approve|reject)_[0-9]+$")
 moderation_detail_handler = CallbackQueryHandler(show_location_detail, pattern="^loc_detail_\\d+$")
 moderation_extra_reward_handler = ConversationHandler(
-    entry_points=[CallbackQueryHandler(extra_reward_choice, pattern="^extra_reward_(coins|gp|skip)$")],
+    entry_points=[CallbackQueryHandler(extra_reward_choice, pattern="^(extra_reward_(coins|gp|skip)|web_bonus_(coins|gp|skip)_\\d+)$")],
     states={EXTRA_REWARD_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, extra_reward_amount)]},
     fallbacks=[CommandHandler("cancel", moderation_menu)],
     allow_reentry=True,

@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 from fastapi.testclient import TestClient
 
 from shared.models.location import Location
+from shared.models.moderation_followup import ModerationFollowup
 from shared.models.webapp_pick import WebAppPick
 from webapp.database import get_db_context, init_db
 from webapp.main import app
@@ -128,6 +129,7 @@ def test_moderation_review_action_approve_reject_and_acl(monkeypatch):
     monkeypatch.setattr("webapp.api.webapp.settings.BOT_TOKEN", bot_token)
     monkeypatch.setattr("webapp.api.webapp.settings.ADMIN_IDS", "9001")
     monkeypatch.setattr("webapp.config.settings.ADMIN_IDS", "9001")
+    monkeypatch.setattr("webapp.api.webapp._notify_bonus_followup", lambda *_a, **_k: None)
 
     init_data_admin = _build_init_data({"id": 9001, "first_name": "A"}, bot_token)
     init_data_user = _build_init_data({"id": 5002, "first_name": "U"}, bot_token)
@@ -156,6 +158,14 @@ def test_moderation_review_action_approve_reject_and_acl(monkeypatch):
     )
     assert approved.status_code == 200
     assert approved.json()["status"] == "approved"
+    with get_db_context() as db:
+        followups = db.query(ModerationFollowup).filter(ModerationFollowup.location_id == 3771).all()
+        assert len(followups) == 1
+    duplicate = client.post(
+        "/api/webapp/moderation/review-action",
+        json={"location_id": 3771, "action": "approve", "init_data": init_data_admin},
+    )
+    assert duplicate.status_code == 400
 
     rejected = client.post(
         "/api/webapp/moderation/review-action",
@@ -163,3 +173,6 @@ def test_moderation_review_action_approve_reject_and_acl(monkeypatch):
     )
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
+    with get_db_context() as db:
+        reject_followups = db.query(ModerationFollowup).filter(ModerationFollowup.location_id == 3772).count()
+        assert reject_followups == 0

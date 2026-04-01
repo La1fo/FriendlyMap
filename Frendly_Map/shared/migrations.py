@@ -4,7 +4,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 SCHEMA_VERSION_TABLE = "schema_version"
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 
 def _ensure_schema_version_table(engine: Engine) -> None:
@@ -232,6 +232,29 @@ def _ensure_coin_transactions_table(engine: Engine) -> None:
         conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_coin_transactions_event_key ON coin_transactions(event_key)"))
 
 
+def _ensure_moderation_followups_table(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS moderation_followups (
+                    id INTEGER PRIMARY KEY,
+                    moderator_id BIGINT NOT NULL,
+                    location_id INTEGER NOT NULL,
+                    owner_id BIGINT NOT NULL,
+                    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    handled_at TIMESTAMP NULL,
+                    FOREIGN KEY(moderator_id) REFERENCES users(id),
+                    FOREIGN KEY(location_id) REFERENCES locations(id),
+                    FOREIGN KEY(owner_id) REFERENCES users(id)
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_moderation_followup_location ON moderation_followups(location_id)"))
+
+
 def run_migrations(engine: Engine) -> None:
     current = get_schema_version(engine)
 
@@ -240,6 +263,7 @@ def run_migrations(engine: Engine) -> None:
     _ensure_total_gp_column(engine)
     _ensure_webapp_pick_tags_column(engine)
     _ensure_coin_transactions_table(engine)
+    _ensure_moderation_followups_table(engine)
     _create_site_views(engine)
 
     if current >= CURRENT_SCHEMA_VERSION:

@@ -1,6 +1,8 @@
 import logging
 import json
 from datetime import datetime
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -9,6 +11,7 @@ from webapp.database import get_db_context
 from shared.models.location import Location
 from shared.models.user import User
 from shared.models.webapp_pick import WebAppPick
+from shared.models.moderation_followup import ModerationFollowup
 from shared.webapp_auth import validate_telegram_init_data
 from webapp.config import is_admin_id, settings
 from bot.services.gp_service import GPService
@@ -44,6 +47,27 @@ class ModerationReviewActionRequest(BaseModel):
     location_id: int = Field(..., gt=0)
     action: str = Field(..., pattern="^(approve|reject)$")
     init_data: str
+
+
+def _notify_bonus_followup(moderator_id: int, followup_id: int, location_name: str) -> None:
+    if not settings.BOT_TOKEN:
+        return
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "💰 Доп монеты", "callback_data": f"web_bonus_coins_{followup_id}"}],
+            [{"text": "🎯 Доп GP (до 60)", "callback_data": f"web_bonus_gp_{followup_id}"}],
+            [{"text": "⏭ Пропустить", "callback_data": f"web_bonus_skip_{followup_id}"}],
+        ]
+    }
+    payload = {
+        "chat_id": moderator_id,
+        "text": f"Локация <b>{location_name}</b> одобрена ✅\n\nВыдать дополнительную награду?",
+        "parse_mode": "HTML",
+        "reply_markup": json.dumps(keyboard, ensure_ascii=False),
+    }
+    url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage?{urlencode(payload)}"
+    with urlopen(url, timeout=8):
+        pass
 
 
 @router.post('/picker/confirm')
@@ -184,6 +208,25 @@ def moderation_review_action(payload: ModerationReviewActionRequest):
                     1,
                     event_key=f"webapp_approval:{loc.id}",
                 )
+
+            followup = db.query(ModerationFollowup).filter(ModerationFollowup.location_id == loc.id).first()
+            if followup is None:
+                followup = ModerationFollowup(
+                    moderator_id=moderator_id,
+                    location_id=loc.id,
+                    owner_id=loc.user_id,
+                    status="pending",
+                )
+                db.add(followup)
+                db.flush()
+                logger.info("Post-approval bonus follow-up scheduled", extra={"location_id": loc.id, "followup_id": followup.id})
+                try:
+                    _notify_bonus_followup(moderator_id, followup.id, loc.name)
+                    logger.info("Post-approval bonus menu shown in bot", extra={"followup_id": followup.id, "moderator_id": moderator_id})
+                except Exception as exc:
+                    logger.warning("Unable to notify bonus follow-up", extra={"followup_id": followup.id, "error": str(exc)})
+            else:
+                logger.info("Duplicate follow-up prevented", extra={"location_id": loc.id, "followup_id": followup.id})
         else:
             loc.status = "rejected"
             loc.approved_by = moderator_id

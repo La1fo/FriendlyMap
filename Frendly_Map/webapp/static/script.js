@@ -675,6 +675,9 @@ async function applyModerationAction(action) {
     showStatus(action === "approve" ? "Локация одобрена" : "Локация отклонена", true);
     await loadLocations();
     closeDetail();
+    if (action === "approve" && typeof tg.close === "function") {
+      setTimeout(() => tg.close(), 300);
+    }
   } catch (e) {
     console.error(e);
     showStatus("Не удалось выполнить действие модерации", true);

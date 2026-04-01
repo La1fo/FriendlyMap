@@ -9,6 +9,7 @@ from .season import Season
 from .user_achievement import UserAchievement
 from .webapp_pick import WebAppPick
 from .coin_transaction import CoinTransaction
+from .moderation_followup import ModerationFollowup
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "UserAchievement",
     "WebAppPick",
     "CoinTransaction",
+    "ModerationFollowup",
 ]

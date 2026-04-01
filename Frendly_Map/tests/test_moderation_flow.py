@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from bot.handlers import moderation, moderation_menu
 from shared.db import create_db_engine, create_session_factory, init_schema
 from shared.models.location import Location
+from shared.models.moderation_followup import ModerationFollowup
 from shared.models.photo import Photo
 from shared.models.user import User
 
@@ -165,6 +166,62 @@ def test_extra_gp_capped_and_extra_coins_unlimited(monkeypatch, tmp_path):
     with SessionLocal() as db:
         user = db.get(User, 5)
         assert user.points == 500
+
+
+def test_web_bonus_skip_and_gp_limit(monkeypatch, tmp_path):
+    SessionLocal = _setup_db(tmp_path)
+    with SessionLocal() as db:
+        db.add(User(id=7, telegram_id=7, username="owner", points=0, total_gp=0))
+        db.add(Location(id=701, user_id=7, name="L", latitude=1.0, longitude=2.0, status="approved"))
+        db.add(ModerationFollowup(id=71, moderator_id=900, location_id=701, owner_id=7, status="pending"))
+        db.commit()
+
+    @contextmanager
+    def fake_db_context():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    async def fake_answer():
+        return None
+
+    async def fake_edit_message_text(_text):
+        return None
+
+    async def fake_reply_text(_text):
+        return None
+
+    async def fake_moderation_menu(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(moderation, "get_db_context", fake_db_context)
+    monkeypatch.setattr(moderation, "moderation_menu", fake_moderation_menu)
+
+    skip_query = SimpleNamespace(data="web_bonus_skip_71", answer=fake_answer, edit_message_text=fake_edit_message_text)
+    skip_update = SimpleNamespace(callback_query=skip_query, effective_user=SimpleNamespace(id=900))
+    skip_context = SimpleNamespace(user_data={})
+    state = asyncio.run(moderation.extra_reward_choice(skip_update, skip_context))
+    assert state == moderation.ConversationHandler.END
+    with SessionLocal() as db:
+        followup = db.get(ModerationFollowup, 71)
+        assert followup.status == "handled"
+
+    with SessionLocal() as db:
+        followup = db.get(ModerationFollowup, 71)
+        followup.status = "pending"
+        db.commit()
+
+    gp_query = SimpleNamespace(data="web_bonus_gp_71", answer=fake_answer, edit_message_text=fake_edit_message_text)
+    gp_update = SimpleNamespace(callback_query=gp_query, effective_user=SimpleNamespace(id=900))
+    gp_context = SimpleNamespace(user_data={})
+    state = asyncio.run(moderation.extra_reward_choice(gp_update, gp_context))
+    assert state == moderation.EXTRA_REWARD_AMOUNT
+
+    msg_update = SimpleNamespace(message=SimpleNamespace(text="61", reply_text=fake_reply_text), effective_user=SimpleNamespace(id=900))
+    state = asyncio.run(moderation.extra_reward_amount(msg_update, gp_context))
+    assert state == moderation.EXTRA_REWARD_AMOUNT
 
 
 def test_delete_menu_contains_map_delete_mode_button(monkeypatch, tmp_path):
