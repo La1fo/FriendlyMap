@@ -8,17 +8,27 @@ from bot.models.achievement import Achievement
 from bot.services.achievements_manager import AchievementsManager
 from bot.utils.section_banners import get_section_banner, send_section_banner
 
+PAGE_SIZE = 5
 
-def _achievement_keyboard(active_view: str) -> InlineKeyboardMarkup:
+def _achievement_keyboard(active_view: str, page: int, total_pages: int) -> InlineKeyboardMarkup:
     standard_mark = "✅ " if active_view == "standard" else ""
     ranked_mark = "✅ " if active_view == "ranked" else ""
-    return InlineKeyboardMarkup([
+    keyboard = [
         [
-            InlineKeyboardButton(f"{standard_mark}Постоянные", callback_data="achievements_standard"),
-            InlineKeyboardButton(f"{ranked_mark}Временные", callback_data="achievements_ranked"),
+            InlineKeyboardButton(f"{standard_mark}Постоянные", callback_data="achievements_standard_page_1"),
+            InlineKeyboardButton(f"{ranked_mark}Сезонные", callback_data="achievements_ranked_page_1"),
         ],
-        [InlineKeyboardButton("◀️ Назад", callback_data="menu_back")],
-    ])
+    ]
+    if total_pages > 1:
+        prev_page = max(1, page - 1)
+        next_page = min(total_pages, page + 1)
+        keyboard.append([
+            InlineKeyboardButton("⬅️" if page > 1 else "·", callback_data=f"achievements_{active_view}_page_{prev_page}"),
+            InlineKeyboardButton(f"{page}/{total_pages}", callback_data=f"achievements_{active_view}_page_{page}"),
+            InlineKeyboardButton("➡️" if page < total_pages else "·", callback_data=f"achievements_{active_view}_page_{next_page}"),
+        ])
+    keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_back")])
+    return InlineKeyboardMarkup(keyboard)
 
 
 def _progress_bar(progress: int, target: int, width: int = 8) -> str:
@@ -32,13 +42,28 @@ def _progress_bar(progress: int, target: int, width: int = 8) -> str:
 def _safe_html_text(value: str | None) -> str:
     return escape(value or "", quote=False)
 
+def _resolve_view_and_page(update: Update) -> tuple[str, int]:
+    view_type = "standard"
+    page = 1
+    data = update.callback_query.data if update.callback_query else ""
+    if not data:
+        return view_type, page
+    if data.startswith("achievements_ranked"):
+        view_type = "ranked"
+    elif data.startswith("achievements_standard"):
+        view_type = "standard"
+    if "_page_" in data:
+        try:
+            page = max(1, int(data.rsplit("_page_", 1)[1]))
+        except ValueError:
+            page = 1
+    return view_type, page
+
 
 async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     manager = AchievementsManager()
-    view_type = "standard"
-    if update.callback_query and update.callback_query.data in {"achievements_standard", "achievements_ranked"}:
-        view_type = "ranked" if update.callback_query.data.endswith("ranked") else "standard"
+    view_type, page = _resolve_view_and_page(update)
 
     with get_db_context() as db:
         manager.ensure_definitions(db)
@@ -50,12 +75,19 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
             .all()
         )
 
-        header = "⏱️ Временные достижения" if view_type == "ranked" else "📌 Постоянные достижения"
+        total_items = len(achievements_list)
+        total_pages = max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE)
+        page = min(page, total_pages)
+        start = (page - 1) * PAGE_SIZE
+        end = start + PAGE_SIZE
+        page_items = achievements_list[start:end]
+
+        header = "⏱️ Сезонные достижения" if view_type == "ranked" else "📌 Постоянные достижения"
         lines = [header]
         if view_type == "ranked":
             lines.extend([f"Сезон: {_safe_html_text(current_season.key)}", ""])
 
-        for idx, achievement in enumerate(achievements_list, start=1):
+        for idx, achievement in enumerate(page_items, start=1):
             if idx > 1:
                 lines.append("────────────")
             season_id = current_season.id if achievement.type == "ranked" else None
@@ -95,7 +127,7 @@ async def achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context,
         "achievements",
         caption,
-        reply_markup=_achievement_keyboard(view_type),
+        reply_markup=_achievement_keyboard(view_type, page, total_pages),
     )
 
 
@@ -109,4 +141,7 @@ def _get_target(achievement: Achievement) -> int:
 
 achievements_handler = CommandHandler("achievements", achievements)
 achievements_menu_handler = MessageHandler(filters.Regex("^(🏆 Достижения|achievements)$"), achievements)
-achievements_callback_handler = CallbackQueryHandler(achievements, pattern="^achievements(|_(standard|ranked))$")
+achievements_callback_handler = CallbackQueryHandler(
+    achievements,
+    pattern=r"^achievements(|_(standard|ranked)(|_page_\d+))$",
+)
