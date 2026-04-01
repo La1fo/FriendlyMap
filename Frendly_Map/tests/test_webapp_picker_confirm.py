@@ -100,6 +100,11 @@ def test_delete_via_map_requires_confirmation_and_approved_status(monkeypatch):
 
     init_db()
     with get_db_context() as db:
+        for loc_id in (2991, 2992):
+            existing = db.get(Location, loc_id)
+            if existing:
+                db.delete(existing)
+        db.flush()
         db.add(Location(id=2991, user_id=9001, name="Approved L", latitude=1.0, longitude=2.0, status="approved"))
         db.add(Location(id=2992, user_id=9001, name="Pending L", latitude=2.0, longitude=3.0, status="pending"))
         db.commit()

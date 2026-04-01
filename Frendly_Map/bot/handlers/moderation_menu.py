@@ -14,6 +14,7 @@ from telegram.ext import (
 from bot.database import get_db_context
 from bot.models.location import Location
 from bot.models.user import User
+from bot.services.achievements_manager import AchievementsManager
 from bot.services.gp_service import GPService
 from bot.utils.common import is_admin
 from bot.utils.section_banners import get_section_banner, send_section_banner
@@ -249,6 +250,14 @@ def _apply_points_change(db, data: dict, amount: int):
         user.points = max(user.points + delta, 0)
         new_value = user.points
         label = "обычных"
+        if delta > 0:
+            AchievementsManager().apply_event(
+                db,
+                user.id,
+                "coins_earned",
+                delta,
+                event_key=f"mod_points:{user.id}:{amount}:{data.get('action')}:{data.get('type')}",
+            )
         db.commit()
     return new_value, label
 

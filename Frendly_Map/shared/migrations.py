@@ -4,7 +4,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 SCHEMA_VERSION_TABLE = "schema_version"
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 def _ensure_schema_version_table(engine: Engine) -> None:
@@ -210,6 +210,28 @@ def _create_site_views(engine: Engine) -> None:
         )
 
 
+def _ensure_coin_transactions_table(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS coin_transactions (
+                    id INTEGER PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    season_id INTEGER NULL,
+                    amount INTEGER NOT NULL,
+                    reason VARCHAR(64) NOT NULL DEFAULT 'unknown',
+                    event_key VARCHAR(128) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id),
+                    FOREIGN KEY(season_id) REFERENCES seasons(id)
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_coin_transactions_event_key ON coin_transactions(event_key)"))
+
+
 def run_migrations(engine: Engine) -> None:
     current = get_schema_version(engine)
 
@@ -217,6 +239,7 @@ def run_migrations(engine: Engine) -> None:
     # non-destructive schema/view guarantees required by writer-side services.
     _ensure_total_gp_column(engine)
     _ensure_webapp_pick_tags_column(engine)
+    _ensure_coin_transactions_table(engine)
     _create_site_views(engine)
 
     if current >= CURRENT_SCHEMA_VERSION:

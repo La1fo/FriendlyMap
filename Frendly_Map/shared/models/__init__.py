@@ -8,6 +8,7 @@ from .achievement import Achievement
 from .season import Season
 from .user_achievement import UserAchievement
 from .webapp_pick import WebAppPick
+from .coin_transaction import CoinTransaction
 
 __all__ = [
     "Base",
@@ -20,4 +21,5 @@ __all__ = [
     "Season",
     "UserAchievement",
     "WebAppPick",
+    "CoinTransaction",
 ]

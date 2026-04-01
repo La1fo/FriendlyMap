@@ -58,7 +58,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 owner.approved_locations += 1
                 owner.moderation_locations = max(owner.moderation_locations - 1, 0)
                 GPService.add_gp(db, owner.id, APPROVE_BASE_GP)
-                completed = achievements.apply_event(db, owner.id, "location_approved", 1)
+                achievements.apply_event(
+                    db,
+                    owner.id,
+                    "coins_earned",
+                    APPROVE_BASE_POINTS,
+                    event_key=f"approval_coins:{loc.id}",
+                )
+                completed = achievements.apply_event(
+                    db,
+                    owner.id,
+                    "location_approved",
+                    1,
+                    event_key=f"approval:{loc.id}",
+                )
                 logger.info(
                     "Location approved",
                     extra={"location_id": loc.id, "moderator_id": uid, "owner_id": owner.id, "base_points": APPROVE_BASE_POINTS, "base_gp": APPROVE_BASE_GP},
@@ -71,6 +84,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 owner.points = max(owner.points - 5, 0)
                 owner.rejected_locations += 1
                 owner.moderation_locations = max(owner.moderation_locations - 1, 0)
+                achievements.apply_event(db, owner.id, "location_rejected", 1, event_key=f"reject:{loc.id}")
                 logger.info("Location rejected", extra={"location_id": loc.id, "moderator_id": uid, "owner_id": owner.id})
 
         db.commit()
@@ -211,6 +225,13 @@ async def extra_reward_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.info("Extra GP granted", extra={"location_id": location_id, "moderator_id": update.effective_user.id, "owner_id": user.id, "amount": amount})
         else:
             user.points += amount
+            AchievementsManager().apply_event(
+                db,
+                user.id,
+                "coins_earned",
+                amount,
+                event_key=f"extra_reward_coins:{location_id}:{user.id}:{amount}",
+            )
             db.commit()
             logger.info("Extra coins granted", extra={"location_id": location_id, "moderator_id": update.effective_user.id, "owner_id": user.id, "amount": amount})
 
