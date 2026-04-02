@@ -1,5 +1,6 @@
 #bot/main.py
 import logging
+from telegram.error import RetryAfter, TelegramError
 from telegram.ext import Application, ContextTypes
 from .config import settings
 from .database import init_db, get_db_context
@@ -14,18 +15,32 @@ logger = logging.getLogger(__name__)
 async def _on_application_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.exception("Unhandled telegram update error", exc_info=context.error)
 
+
+async def _safe_set_my_commands(application: Application) -> None:
+    try:
+        await application.bot.set_my_commands([
+            ("start", "Запустить бота"),
+            ("profile", "Мой профиль"),
+            ("map", "Открыть карту"),
+            ("add", "Добавить локацию"),
+            ("leaderboard", "Топ пользователей"),
+            ("achievements", "Достижения"),
+            ("pending", "Модерация локаций"),
+            ("moderation", "Панель модерации"),
+            ("faq", "FAQ"),
+        ])
+    except RetryAfter as exc:
+        # setMyCommands is best-effort on startup: Telegram 429 must not block polling startup
+        logger.warning(
+            "Bot commands update skipped due to Telegram rate limit; continuing startup. retry_after=%s",
+            exc.retry_after,
+        )
+    except TelegramError:
+        logger.exception("Bot commands update failed; continuing startup anyway")
+
+
 async def post_init(application: Application):
-    await application.bot.set_my_commands([
-        ("start", "Запустить бота"),
-        ("profile", "Мой профиль"),
-        ("map", "Открыть карту"),
-        ("add", "Добавить локацию"),
-        ("leaderboard", "Топ пользователей"),
-        ("achievements", "Достижения"),
-        ("pending", "Модерация локаций"),
-        ("moderation", "Панель модерации"),
-        ("faq", "FAQ"),
-    ])
+    await _safe_set_my_commands(application)
     ok, message = webapp_url_diagnostics()
     if ok:
         logger.info(message)

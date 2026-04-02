@@ -1,9 +1,9 @@
 # webapp/services/location_service.py
 from sqlalchemy.orm import Session
-from webapp.models.location import Location
-from webapp.models.photo import Photo
-from webapp.models.tag import Tag
-from webapp.models.location_tag import LocationTag
+from shared.models.location import Location
+from shared.models.photo import Photo
+from shared.models.tag import Tag
+from shared.models.location_tag import LocationTag
 from typing import List, Dict
 
 class LocationService:

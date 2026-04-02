@@ -1,21 +1,15 @@
-# bot/database.py
 from contextlib import contextmanager
 import logging
 
-from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import inspect, text
 
 from bot.config import settings
-from bot.models.base import Base
+from shared.db import create_db_engine, create_session_factory, init_schema, verify_schema
 
 logger = logging.getLogger(__name__)
 
-connect_args = {}
-if settings.DB_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
-
-engine = create_engine(settings.DB_URL, echo=False, future=True, connect_args=connect_args)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+engine = create_db_engine(settings.DB_URL)
+SessionLocal = create_session_factory(engine)
 
 
 def get_db_session():
@@ -59,9 +53,7 @@ def _migrate_postgres_ids_to_bigint() -> None:
             )
         ).mappings()
 
-        existing_types = {
-            (row["table_name"], row["column_name"]): row["data_type"] for row in existing_rows
-        }
+        existing_types = {(row["table_name"], row["column_name"]): row["data_type"] for row in existing_rows}
 
         columns_to_upgrade = []
         for table_name, columns in bigint_columns.items():
@@ -76,10 +68,7 @@ def _migrate_postgres_ids_to_bigint() -> None:
         constraints = conn.execute(
             text(
                 """
-                SELECT
-                    con.conname AS name,
-                    con.conrelid::regclass::text AS table_name,
-                    pg_get_constraintdef(con.oid) AS definition
+                SELECT con.conname AS name, con.conrelid::regclass::text AS table_name, pg_get_constraintdef(con.oid) AS definition
                 FROM pg_constraint con
                 JOIN pg_class rel ON rel.oid = con.conrelid
                 JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
@@ -117,25 +106,11 @@ def _migrate_postgres_ids_to_bigint() -> None:
             conn.execute(text(f'ALTER TABLE "{table_name}" DROP CONSTRAINT "{con["name"]}"'))
 
         for table_name, column_name in columns_to_upgrade:
-            conn.execute(
-                text(
-                    f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" TYPE BIGINT '
-                    f'USING "{column_name}"::bigint'
-                )
-            )
+            conn.execute(text(f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" TYPE BIGINT USING "{column_name}"::bigint'))
 
         for con in constraints_to_recreate:
             table_name = con["table_name"].split(".")[-1].strip('"')
-            conn.execute(
-                text(
-                    f'ALTER TABLE "{table_name}" ADD CONSTRAINT "{con["name"]}" {con["definition"]}'
-                )
-            )
-
-        logger.info(
-            "Migrated integer ID columns to BIGINT in PostgreSQL",
-            extra={"columns": columns_to_upgrade},
-        )
+            conn.execute(text(f'ALTER TABLE "{table_name}" ADD CONSTRAINT "{con["name"]}" {con["definition"]}'))
 
 
 def _ensure_support_columns() -> None:
@@ -157,15 +132,16 @@ def _ensure_support_columns() -> None:
     }
 
     with engine.begin() as conn:
+        inspector = inspect(conn)
         for table_name, columns in table_columns.items():
-            existing = {col["name"] for col in inspect(conn).get_columns(table_name)}
+            try:
+                existing = {col["name"] for col in inspector.get_columns(table_name)}
+            except Exception:
+                continue
             for column_name, column_def in columns.items():
                 if column_name in existing:
                     continue
                 conn.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_def}'))
-
-
-
 
 
 def _normalize_support_statuses() -> None:
@@ -178,19 +154,19 @@ def _normalize_support_statuses() -> None:
 
 
 def init_db():
-    from bot.models.user import User  # noqa: F401
-    from bot.models.location import Location  # noqa: F401
-    from bot.models.photo import Photo  # noqa: F401
-    from bot.models.tag import Tag  # noqa: F401
-    from bot.models.location_tag import LocationTag  # noqa: F401
-    from bot.models.achievement import Achievement  # noqa: F401
-    from bot.models.season import Season  # noqa: F401
-    from bot.models.user_achievement import UserAchievement  # noqa: F401
+    # shared models
+    from shared.models import (
+        User, Location, Photo, Tag, LocationTag, Achievement, Season, UserAchievement, WebAppPick,
+    )  # noqa: F401
+
+    # bot-only models
     from bot.models.faq_entry import FaqEntry  # noqa: F401
     from bot.models.support_ticket import SupportTicket, SupportMessage  # noqa: F401
     from bot.models.support_session import SupportSession  # noqa: F401
+    from bot.models.shop_item import ShopItem  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
+    init_schema(engine)
     _migrate_postgres_ids_to_bigint()
     _ensure_support_columns()
     _normalize_support_statuses()
+    verify_schema(engine)

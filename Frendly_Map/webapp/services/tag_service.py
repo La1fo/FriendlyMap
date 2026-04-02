@@ -1,6 +1,6 @@
 # webapp/services/tag_service.py
 from sqlalchemy.orm import Session
-from webapp.models.tag import Tag
+from shared.models.tag import Tag
 from typing import List, Dict
 
 class TagService:

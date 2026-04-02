@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from bot.config import settings
 from bot.models.user import User
-from bot.utils.rank import get_user_rank_display
+from shared.rank import get_rank_progress
 
 
 class LeaderboardService:
@@ -16,9 +16,9 @@ class LeaderboardService:
             return
 
         samples = [
-            User(username="Explorer", first_name="Explorer", pts=120, points=300),
-            User(username="Mapper", first_name="Mapper", pts=260, points=550),
-            User(username="Master", first_name="Master", pts=520, points=900),
+            User(username="Explorer", first_name="Explorer", total_gp=120, points=300),
+            User(username="Mapper", first_name="Mapper", total_gp=260, points=550),
+            User(username="Master", first_name="Master", total_gp=520, points=900),
         ]
         db.add_all(samples)
         db.commit()
@@ -27,7 +27,7 @@ class LeaderboardService:
     def get_top_users(db: Session, limit: int = 10):
         return (
             db.query(User)
-            .order_by(User.pts.desc(), User.id.asc())
+            .order_by(User.total_gp.desc(), User.id.asc())
             .limit(limit)
             .all()
         )
@@ -37,14 +37,17 @@ class LeaderboardService:
         user = db.get(User, user_id)
         if not user:
             return 0, 0
-        higher_count = (
+        higher_or_earlier_count = (
             db.query(func.count(User.id))
-            .filter(User.pts > user.pts)
+            .filter(
+                (User.total_gp > user.total_gp)
+                | ((User.total_gp == user.total_gp) & (User.id < user.id))
+            )
             .scalar()
         )
         total = db.query(func.count(User.id)).scalar()
-        return higher_count + 1, total
+        return higher_or_earlier_count + 1, total
 
     @staticmethod
-    def get_rank_title(pts: int) -> str:
-        return get_user_rank_display(pts)
+    def get_rank_title(points: int, leaderboard_position: int | None = None) -> str:
+        return str(get_rank_progress(points, leaderboard_position=leaderboard_position)["rank_name"])

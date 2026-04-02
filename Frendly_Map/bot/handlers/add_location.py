@@ -1,5 +1,10 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import asyncio
+import json
+import logging
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.error import BadRequest
+from telegram.ext._utils.types import CCT
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -12,25 +17,24 @@ from telegram.ext import (
 from bot.database import get_db_context
 from bot.keyboards.main_menu import get_main_menu
 from bot.models.tag import Tag
+from bot.models.webapp_pick import WebAppPick
 from bot.services.achievements_manager import AchievementsManager
 from bot.services.location_service import LocationService
+from bot.utils.section_banners import get_section_banner, send_section_banner
 from bot.utils.users import get_or_create_user
 from bot.utils.webapp import build_webapp_url
 
-ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_TAG_CATEGORY, ASK_TAG_PICK, ASK_PHOTO, CONFIRM = range(7)
+ASK_NAME, ASK_DESCRIPTION, ASK_LOCATION, ASK_PHOTO, CONFIRM = range(5)
 
 CB_CANCEL = "addloc_cancel"
-CB_SKIP_DESC = "addloc_skip_desc"
-CB_SKIP_PHOTO = "addloc_skip_photo"
 CB_CONFIRM = "addloc_confirm"
-CB_TAG_CAT = "addloc_tag_cat_"
-CB_TAG_TOGGLE = "addloc_tag_toggle_"
-CB_TAG_DONE = "addloc_tag_done"
-CB_TAG_SKIP = "addloc_tag_skip"
-CB_TAG_CLEAR = "addloc_tag_clear"
-CB_TAG_BACK = "addloc_tag_back"
+CB_PHOTO_DONE = "addloc_photo_done"
+WEBAPP_FLOW_ADD_LOCATION = "add_location"
+GEO_JOB_PREFIX = "addloc_geo_poll_"
+GEO_TASK_PREFIX = "addloc_geo_task_"
+CANCEL_TEXT = "❌ Отменить"
+logger = logging.getLogger(__name__)
 
-MAX_SELECTED_TAGS = 5
 TAG_CATALOG = {
     "Еда": ["кафе", "ресторан", "бар", "фастфуд", "пекарня"],
     "Отдых": ["парк", "лес", "озеро", "река", "пляж", "смотровая площадка", "место для прогулки"],
@@ -43,24 +47,212 @@ TAG_CATALOG = {
 }
 
 
-def _cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)]])
+def _geo_job_name(user_id: int) -> str:
+    return f"{GEO_JOB_PREFIX}{user_id}"
 
 
-def _description_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("⏭ Пропустить описание", callback_data=CB_SKIP_DESC)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
-        ]
+def _geo_task_name(user_id: int) -> str:
+    return f"{GEO_TASK_PREFIX}{user_id}"
+
+
+def _conversation_key(chat_id: int, user_id: int) -> tuple[int, int]:
+    return chat_id, user_id
+
+
+async def _schedule_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int) -> None:
+    if context.job_queue is not None:
+        job_name = _geo_job_name(user_id)
+        for job in context.job_queue.get_jobs_by_name(job_name):
+            job.schedule_removal()
+
+        logger.info("Started geo-pick job polling", extra={"user_id": user_id, "chat_id": chat_id})
+        context.job_queue.run_repeating(
+            _poll_geo_pick_job,
+            interval=1.0,
+            first=1.0,
+            name=job_name,
+            data={"user_id": user_id, "chat_id": chat_id},
+        )
+        return
+
+    task_name = _geo_task_name(user_id)
+    task = context.application.bot_data.get(task_name)
+    if task and not task.done():
+        task.cancel()
+        logger.info("Stopped geo-pick async polling task", extra={"user_id": user_id})
+
+    logger.info("Started geo-pick async polling task", extra={"user_id": user_id, "chat_id": chat_id})
+    context.application.bot_data[task_name] = context.application.create_task(
+        _poll_geo_pick_task(context.application, user_id, chat_id)
     )
 
 
-def _location_keyboard() -> InlineKeyboardMarkup:
+def _stop_geo_pick_poll(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
+    if context.job_queue is not None:
+        for job in context.job_queue.get_jobs_by_name(_geo_job_name(user_id)):
+            job.schedule_removal()
+
+    task_name = _geo_task_name(user_id)
+    task = context.application.bot_data.pop(task_name, None)
+    if task and not task.done():
+        task.cancel()
+        logger.info("Stopped geo-pick async polling task", extra={"user_id": user_id})
+
+
+def _clear_pending_geo_pick(user_id: int, chat_id: int) -> None:
+    with get_db_context() as db:
+        db.query(WebAppPick).filter(
+            WebAppPick.user_id == user_id,
+            WebAppPick.chat_id == chat_id,
+            WebAppPick.flow == WEBAPP_FLOW_ADD_LOCATION,
+            WebAppPick.processed.is_(False),
+        ).delete()
+        db.commit()
+
+
+class _SyntheticMessage:
+    def __init__(self, bot, chat_id: int):
+        self._bot = bot
+        self.chat_id = chat_id
+
+    async def reply_text(self, text: str, reply_markup=None):
+        return await self._bot.send_message(chat_id=self.chat_id, text=text, reply_markup=reply_markup)
+
+
+class _SyntheticUpdate:
+    def __init__(self, bot, user_id: int, chat_id: int):
+        self.callback_query = None
+        self.message = _SyntheticMessage(bot, chat_id)
+        self.effective_chat = type("Chat", (), {"id": chat_id})()
+        self.effective_user = type("User", (), {"id": user_id})()
+
+
+async def _poll_geo_pick_job(context: CCT):
+    user_id = context.job.data["user_id"]
+    chat_id = context.job.data["chat_id"]
+    try:
+        await _advance_from_pending_pick(context.application, context.bot, user_id, chat_id)
+    except Exception:
+        logger.exception("Geo-pick job polling failed", extra={"user_id": user_id, "chat_id": chat_id})
+
+
+async def _poll_geo_pick_task(application, user_id: int, chat_id: int):
+    try:
+        while True:
+            try:
+                advanced = await _advance_from_pending_pick(application, application.bot, user_id, chat_id)
+            except Exception:
+                logger.exception("Geo-pick async polling failed", extra={"user_id": user_id, "chat_id": chat_id})
+                await asyncio.sleep(1.0)
+                continue
+            if advanced:
+                return
+            await asyncio.sleep(1.0)
+    except asyncio.CancelledError:
+        return
+
+
+async def _advance_from_pending_pick(application, bot, user_id: int, chat_id: int) -> bool:
+    pick_id = None
+    lat = None
+    lng = None
+    raw_tag_ids = None
+    with get_db_context() as db:
+        pick = (
+            db.query(WebAppPick)
+            .filter(
+                WebAppPick.user_id == user_id,
+                WebAppPick.chat_id == chat_id,
+                WebAppPick.flow == WEBAPP_FLOW_ADD_LOCATION,
+                WebAppPick.processed.is_(False),
+            )
+            .order_by(WebAppPick.id.desc())
+            .first()
+        )
+        if not pick:
+            logger.debug("No pending geo-pick record", extra={"user_id": user_id, "chat_id": chat_id, "flow": WEBAPP_FLOW_ADD_LOCATION})
+            return False
+
+        pick_id = pick.id
+        lat = pick.latitude
+        lng = pick.longitude
+        raw_tag_ids = pick.tag_ids_json
+        logger.info("Geo-pick record found", extra={"user_id": user_id, "chat_id": chat_id, "pick_id": pick_id, "flow": WEBAPP_FLOW_ADD_LOCATION})
+
+    try:
+        user_data = application.user_data[user_id]
+    except KeyError:
+        user_data = application._user_data.setdefault(user_id, {})
+
+    user_data["latitude"] = lat
+    user_data["longitude"] = lng
+    logger.debug(
+        "Stored geo coordinates in user_data",
+        extra={"user_id": user_id, "chat_id": chat_id, "latitude": lat, "longitude": lng},
+    )
+
+    with get_db_context() as db:
+        LocationService.ensure_tags(db, TAG_CATALOG)
+
+    tag_ids: list[int] = []
+    if raw_tag_ids:
+        try:
+            parsed = json.loads(raw_tag_ids)
+            if isinstance(parsed, list):
+                tag_ids = [int(x) for x in parsed if isinstance(x, int) or (isinstance(x, str) and x.isdigit())]
+        except json.JSONDecodeError:
+            logger.warning("Invalid picker tag_ids_json payload", extra={"user_id": user_id, "chat_id": chat_id})
+    user_data["selected_tag_ids"] = sorted(set(tag_ids))[:5]
+    try:
+        add_location_handler._conversations[_conversation_key(chat_id, user_id)] = ASK_PHOTO
+        logger.debug("Set conversation state to ASK_PHOTO", extra={"user_id": user_id, "chat_id": chat_id})
+        synthetic_update = _SyntheticUpdate(bot, user_id, chat_id)
+        fake_context = type("Ctx", (), {"bot": bot, "user_data": user_data})()
+        await _proceed_to_photo_step(synthetic_update, fake_context)
+    except Exception:
+        logger.exception(
+            "Failed to advance add-location conversation after geo-pick",
+            extra={"user_id": user_id, "chat_id": chat_id, "pick_id": pick_id},
+        )
+        return False
+
+    with get_db_context() as db:
+        item = db.get(WebAppPick, pick_id)
+        if item is not None and not item.processed:
+            item.processed = True
+            db.commit()
+
+    logger.info(
+        "Advanced add-location conversation after geo-pick",
+        extra={
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "pick_id": pick_id,
+            "next_state": ASK_PHOTO,
+            "tag_ids_count": len(user_data["selected_tag_ids"]),
+        },
+    )
+
+    task_name = _geo_task_name(user_id)
+    task = application.bot_data.pop(task_name, None)
+    if task and not task.done() and asyncio.current_task() is not task:
+        task.cancel()
+    return True
+
+
+def _cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)]])
+
+
+def _description_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)]])
+
+
+def _location_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🗺️ Открыть карту", web_app={"url": build_webapp_url("/map")})],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton("🗺️ Открыть карту", web_app=WebAppInfo(url=build_webapp_url(f"/map?picker=1&chat_id={chat_id}")))],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
 
@@ -68,8 +260,8 @@ def _location_keyboard() -> InlineKeyboardMarkup:
 def _photo_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("⏭ Пропустить фото", callback_data=CB_SKIP_PHOTO)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton("✅ Подтвердить", callback_data=CB_PHOTO_DONE)],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
 
@@ -78,7 +270,7 @@ def _confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("✅ Подтвердить", callback_data=CB_CONFIRM)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton(CANCEL_TEXT, callback_data=CB_CANCEL)],
         ]
     )
 
@@ -91,36 +283,6 @@ def _set_selected_tag_ids(context: ContextTypes.DEFAULT_TYPE, tag_ids: set[int])
     context.user_data["selected_tag_ids"] = list(tag_ids)
 
 
-def _tag_categories_keyboard(selected_count: int) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(category, callback_data=f"{CB_TAG_CAT}{category}")] for category in TAG_CATALOG]
-    rows.extend(
-        [
-            [InlineKeyboardButton(f"✅ Готово ({selected_count}/{MAX_SELECTED_TAGS})", callback_data=CB_TAG_DONE)],
-            [InlineKeyboardButton("🧹 Очистить всё", callback_data=CB_TAG_CLEAR)],
-            [InlineKeyboardButton("⏭ Пропустить", callback_data=CB_TAG_SKIP)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
-        ]
-    )
-    return InlineKeyboardMarkup(rows)
-
-
-def _tag_pick_keyboard(category: str, tags: list[Tag], selected_ids: set[int]) -> InlineKeyboardMarkup:
-    rows = []
-    for tag in tags:
-        selected_mark = "✅ " if tag.id in selected_ids else ""
-        rows.append([InlineKeyboardButton(f"{selected_mark}{tag.name}", callback_data=f"{CB_TAG_TOGGLE}{tag.id}")])
-
-    rows.extend(
-        [
-            [InlineKeyboardButton("◀️ Назад к категориям", callback_data=CB_TAG_BACK)],
-            [InlineKeyboardButton("✅ Готово", callback_data=CB_TAG_DONE)],
-            [InlineKeyboardButton("🧹 Очистить всё", callback_data=CB_TAG_CLEAR)],
-            [InlineKeyboardButton("❌ Отменить", callback_data=CB_CANCEL)],
-        ]
-    )
-    return InlineKeyboardMarkup(rows)
-
-
 def _clear_flow_data(context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in (
         "loc_name",
@@ -129,7 +291,6 @@ def _clear_flow_data(context: ContextTypes.DEFAULT_TYPE) -> None:
         "longitude",
         "photos",
         "selected_tag_ids",
-        "current_tag_category",
         "add_location_message_id",
     ):
         context.user_data.pop(key, None)
@@ -162,9 +323,12 @@ async def _render_flow_message(
             await context.bot.edit_message_text(text_value, chat_id=chat_id, message_id=message_id, reply_markup=reply_markup)
             return
         except BadRequest as exc:
-            if "Message is not modified" in str(exc):
+            error_text = str(exc).lower()
+            if "message is not modified" in error_text:
                 return
-            if "message to edit not found" not in str(exc).lower():
+            if "there is no text in the message to edit" in error_text:
+                context.user_data.pop("add_location_message_id", None)
+            elif "message to edit not found" not in error_text:
                 raise
 
     source = update.callback_query.message if update.callback_query else update.message
@@ -172,51 +336,28 @@ async def _render_flow_message(
     context.user_data["add_location_message_id"] = sent.message_id
 
 
+async def _render_location_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE, text_value: str) -> None:
+    await _render_flow_message(update, context, text_value, _location_keyboard(update.effective_chat.id))
+
+
 async def _show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_user.id
-    menu_id = context.user_data.get("main_menu_message_id")
-    if menu_id:
-        try:
-            await context.bot.edit_message_text("Главное меню:", chat_id=chat_id, message_id=menu_id, reply_markup=get_main_menu(chat_id))
-            return
-        except BadRequest:
-            pass
-
-    sent = await context.bot.send_message(chat_id=chat_id, text="Главное меню:", reply_markup=get_main_menu(chat_id))
-    context.user_data["main_menu_message_id"] = sent.message_id
-
-
-async def _render_tag_categories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    selected_ids = _get_selected_tag_ids(context)
-    text = (
-        "🏷️ Выбери категорию тегов\n"
-        f"Выбрано: {len(selected_ids)}/{MAX_SELECTED_TAGS}.\n"
-        "Можно выбирать теги из нескольких категорий."
+    banner = get_section_banner("main_menu")
+    caption = f"<b>{banner['title']}</b>\n\n{banner['description']}"
+    await send_section_banner(
+        update,
+        context,
+        "main_menu",
+        caption,
+        reply_markup=get_main_menu(update.effective_user.id),
+        store_message_key="main_menu_message_id",
     )
-    await _render_flow_message(update, context, text, _tag_categories_keyboard(len(selected_ids)))
-    return ASK_TAG_CATEGORY
-
-
-async def _render_category_tags(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str) -> int:
-    selected_ids = _get_selected_tag_ids(context)
-    with get_db_context() as db:
-        tags = db.query(Tag).filter(Tag.category == category).order_by(Tag.name.asc()).all()
-
-    context.user_data["current_tag_category"] = category
-    text = (
-        f"📂 Категория: {category}\n"
-        f"Выбрано всего: {len(selected_ids)}/{MAX_SELECTED_TAGS}\n"
-        "Нажми на тег, чтобы выбрать/снять выбор."
-    )
-    await _render_flow_message(update, context, text, _tag_pick_keyboard(category, tags, selected_ids))
-    return ASK_TAG_PICK
 
 
 async def _proceed_to_photo_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await _render_flow_message(
         update,
         context,
-        "📷 Отправь фото места (можно несколько) или пропусти шаг.",
+        "📷 Отправь хотя бы одно фото места. Можно отправить несколько.",
         _photo_keyboard(),
     )
     return ASK_PHOTO
@@ -238,105 +379,93 @@ async def ask_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ask_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["loc_description"] = update.message.text.strip()
-    await _delete_user_message(update, context)
-    await _render_flow_message(
-        update,
-        context,
-        "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
-        _location_keyboard(),
-    )
-    return ASK_LOCATION
-
-
-async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    context.user_data["loc_description"] = None
-    await _render_flow_message(
-        update,
-        context,
-        "📌 Выбери точку на карте и отправь геопозицию. Текущую геопозицию отправлять не нужно.",
-        _location_keyboard(),
-    )
-    return ASK_LOCATION
-
-
-async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.location:
+    description = (update.message.text or "").strip()
+    if not description:
         await _delete_user_message(update, context)
         await _render_flow_message(
             update,
             context,
-            "⚠️ Нужна геопозиция. Открой карту, выбери точку и отправь её.",
-            _location_keyboard(),
+            "⚠️ Описание обязательно. Напиши краткое описание локации.",
+            _description_keyboard(),
+        )
+        return ASK_DESCRIPTION
+
+    context.user_data["loc_description"] = description
+    await _delete_user_message(update, context)
+    await _render_location_prompt(
+        update,
+        context,
+        "📌 Выбери точку на карте и подтверди её в Mini App. Затем выбери теги и подтверди.",
+    )
+    with get_db_context() as db:
+        LocationService.ensure_tags(db, TAG_CATALOG)
+    _clear_pending_geo_pick(update.effective_user.id, update.effective_chat.id)
+    await _schedule_geo_pick_poll(context, update.effective_user.id, update.effective_chat.id)
+    return ASK_LOCATION
+
+
+def _parse_webapp_coords(raw_payload: str) -> tuple[float | None, float | None]:
+    raw = (raw_payload or "").strip()
+    if not raw:
+        return None, None
+
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        source = payload
+        if isinstance(payload.get("point"), dict):
+            source = payload["point"]
+        elif isinstance(payload.get("coords"), dict):
+            source = payload["coords"]
+
+        lat_raw = source.get("latitude", source.get("lat"))
+        lng_raw = source.get("longitude", source.get("lng"))
+
+        try:
+            if lat_raw is not None and lng_raw is not None:
+                return float(lat_raw), float(lng_raw)
+        except (TypeError, ValueError):
+            pass
+
+    if "," in raw:
+        try:
+            raw_lat, raw_lng = raw.split(",", 1)
+            return float(raw_lat.strip()), float(raw_lng.strip())
+        except (TypeError, ValueError):
+            return None, None
+
+    return None, None
+
+
+async def get_coords(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    lat = None
+    lng = None
+
+    if message and message.location:
+        lat = message.location.latitude
+        lng = message.location.longitude
+    elif message and message.text:
+        lat, lng = _parse_webapp_coords(message.text)
+
+    if lat is None or lng is None:
+        await _delete_user_message(update, context)
+        await _render_location_prompt(
+            update,
+            context,
+            "⚠️ Нужна геопозиция. Открой карту, поставь метку и нажми «Подтвердить точку».",
         )
         return ASK_LOCATION
 
-    loc = update.message.location
-    context.user_data["latitude"] = loc.latitude
-    context.user_data["longitude"] = loc.longitude
+    context.user_data["latitude"] = lat
+    context.user_data["longitude"] = lng
     await _delete_user_message(update, context)
 
-    with get_db_context() as db:
-        LocationService.ensure_tags(db, TAG_CATALOG)
-
-    return await _render_tag_categories(update, context)
-
-
-async def open_tag_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    category = query.data.replace(CB_TAG_CAT, "", 1)
-    if category not in TAG_CATALOG:
-        await query.answer("Категория не найдена", show_alert=True)
-        return ASK_TAG_CATEGORY
-    return await _render_category_tags(update, context, category)
-
-
-async def toggle_tag(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    tag_id = int(query.data.replace(CB_TAG_TOGGLE, "", 1))
-    selected = _get_selected_tag_ids(context)
-
-    if tag_id in selected:
-        selected.remove(tag_id)
-    else:
-        if len(selected) >= MAX_SELECTED_TAGS:
-            await query.answer(f"Можно выбрать не более {MAX_SELECTED_TAGS} тегов", show_alert=True)
-            return ASK_TAG_PICK
-        selected.add(tag_id)
-
-    _set_selected_tag_ids(context, selected)
-    category = context.user_data.get("current_tag_category")
-    if not category:
-        return await _render_tag_categories(update, context)
-    return await _render_category_tags(update, context, category)
-
-
-async def tags_back_to_categories(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    return await _render_tag_categories(update, context)
-
-
-async def tags_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    return await _proceed_to_photo_step(update, context)
-
-
-async def tags_skip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
     context.user_data["selected_tag_ids"] = []
     return await _proceed_to_photo_step(update, context)
-
-
-async def tags_clear_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer("Выбор тегов очищен")
-    context.user_data["selected_tag_ids"] = []
-    category = context.user_data.get("current_tag_category")
-    if category and update.callback_query.message and "Категория:" in update.callback_query.message.text:
-        return await _render_category_tags(update, context, category)
-    return await _render_tag_categories(update, context)
 
 
 async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -344,22 +473,33 @@ async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_id = update.message.photo[-1].file_id
         context.user_data.setdefault("photos", []).append(file_id)
         await _delete_user_message(update, context)
+        photos_count = len(context.user_data.get('photos', []))
         await _render_flow_message(
             update,
             context,
-            f"📷 Фото добавлено: {len(context.user_data.get('photos', []))}. Можно отправить ещё или пропустить.",
+            f"📷 Фото добавлено: {photos_count}. "
+            f"Отправь ещё фото или нажми «Подтвердить», когда закончишь.",
             _photo_keyboard(),
         )
         return ASK_PHOTO
 
     await _delete_user_message(update, context)
-    await _render_flow_message(update, context, "⚠️ Отправь фото или нажми «Пропустить фото».", _photo_keyboard())
+    await _render_flow_message(update, context, "⚠️ Отправь фото места, пропустить этот шаг нельзя.", _photo_keyboard())
     return ASK_PHOTO
 
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await update.callback_query.answer()
+
+    if not context.user_data.get("photos"):
+        await _render_flow_message(
+            update,
+            context,
+            "⚠️ Нельзя продолжить без фото. Отправь хотя бы одно фото места.",
+            _photo_keyboard(),
+        )
+        return ASK_PHOTO
 
     d = context.user_data
     selected_ids = _get_selected_tag_ids(context)
@@ -380,10 +520,6 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await _render_flow_message(update, context, msg, _confirm_keyboard())
     return CONFIRM
-
-
-async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await confirm(update, context)
 
 
 async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -417,7 +553,8 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.delete_message(chat_id=user.id, message_id=flow_message_id)
         except Exception:
             pass
-
+    _stop_geo_pick_poll(context, user.id)
+    _clear_pending_geo_pick(user.id, update.effective_chat.id)
     _clear_flow_data(context)
     await _show_main_menu(update, context)
     return ConversationHandler.END
@@ -434,6 +571,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+    _stop_geo_pick_poll(context, update.effective_user.id)
+    _clear_pending_geo_pick(update.effective_user.id, update.effective_chat.id)
     _clear_flow_data(context)
     await _show_main_menu(update, context)
     return ConversationHandler.END
@@ -448,24 +587,14 @@ add_location_handler = ConversationHandler(
     states={
         ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_description)],
         ASK_DESCRIPTION: [
-            CallbackQueryHandler(skip_description, pattern=f"^{CB_SKIP_DESC}$"),
             MessageHandler(filters.TEXT & ~filters.COMMAND, ask_coords),
         ],
-        ASK_LOCATION: [MessageHandler(filters.LOCATION, get_coords)],
-        ASK_TAG_CATEGORY: [
-            CallbackQueryHandler(open_tag_category, pattern=f"^{CB_TAG_CAT}"),
-            CallbackQueryHandler(tags_done, pattern=f"^{CB_TAG_DONE}$"),
-            CallbackQueryHandler(tags_skip, pattern=f"^{CB_TAG_SKIP}$"),
-            CallbackQueryHandler(tags_clear_all, pattern=f"^{CB_TAG_CLEAR}$"),
-        ],
-        ASK_TAG_PICK: [
-            CallbackQueryHandler(toggle_tag, pattern=f"^{CB_TAG_TOGGLE}"),
-            CallbackQueryHandler(tags_back_to_categories, pattern=f"^{CB_TAG_BACK}$"),
-            CallbackQueryHandler(tags_done, pattern=f"^{CB_TAG_DONE}$"),
-            CallbackQueryHandler(tags_clear_all, pattern=f"^{CB_TAG_CLEAR}$"),
+        ASK_LOCATION: [
+            MessageHandler(filters.LOCATION, get_coords),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, get_coords),
         ],
         ASK_PHOTO: [
-            CallbackQueryHandler(skip_photo, pattern=f"^{CB_SKIP_PHOTO}$"),
+            CallbackQueryHandler(confirm, pattern=f"^{CB_PHOTO_DONE}$"),
             MessageHandler(filters.PHOTO, collect_photo),
             MessageHandler(filters.TEXT & ~filters.COMMAND, collect_photo),
         ],

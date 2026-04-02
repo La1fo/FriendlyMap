@@ -1,4 +1,5 @@
 # bot/config.py
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -31,3 +32,9 @@ class Settings(BaseSettings):
 
 # Глобальный экземпляр
 settings = Settings()
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if settings.DB_URL.startswith("sqlite:///./"):
+    rel_path = settings.DB_URL.removeprefix("sqlite:///./")
+    settings.DB_URL = f"sqlite:///{(_PROJECT_ROOT / rel_path).resolve()}"

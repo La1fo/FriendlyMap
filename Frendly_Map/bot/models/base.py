@@ -1,4 +1,3 @@
-# bot/models/base.py
-from sqlalchemy.orm import declarative_base
+from shared.models.base import Base
 
-Base = declarative_base()
+__all__ = ["Base"]
